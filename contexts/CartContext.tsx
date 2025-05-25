@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import api from '../app/api/api';
 
@@ -121,38 +121,81 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const token = await getToken();
       if (!token) {
-        throw new Error('Aucun token d’authentification trouvé');
+        throw new Error("Aucun token d'authentification trouvé");
       }
 
-      const cartResponse = await api.get('/cart/active');
-      const cart = cartResponse.data.data;
-      if (!cart) {
-        throw new Error('Aucun panier actif trouvé');
+      // Try to get existing cart first
+      try {
+        const cartResponse = await api.get("/cart/active", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (cartResponse.data?.data?.id) {
+          // Add item to existing cart
+          const response = await api.post('/cart-items', {
+            cartId: cartResponse.data.data.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            unit_price: item.price,
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          console.log('CartContext - Réponse POST /cart-items:', JSON.stringify(response.data, null, 2));
+          await fetchCart();
+          return;
+        }
+      } catch (error: any) {
+        // Only create new cart if we get a 404
+        if (error.response?.status !== 404) {
+          throw error;
+        }
       }
 
+      // Create new cart only if no active cart exists
+      const cartResponse = await api.post("/cart", {
+        status: "draft",
+        items: []
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!cartResponse.data?.data?.id) {
+        throw new Error('Erreur lors de la création du panier');
+      }
+
+      // Add item to new cart
       const response = await api.post('/cart-items', {
-        cartId: cart.id,
+        cartId: cartResponse.data.data.id,
         productId: item.productId,
         variantId: item.variantId,
         quantity: item.quantity,
         unit_price: item.price,
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('CartContext - Réponse POST /cart-items :', JSON.stringify(response.data, null, 2));
 
+      console.log('CartContext - Réponse POST /cart-items après création panier:', JSON.stringify(response.data, null, 2));
       await fetchCart();
+
     } catch (error: any) {
       console.error('CartContext - Erreur addItem :', error.message);
       console.log('CartContext - Détails erreur :', JSON.stringify(error.response?.data, null, 2));
+      
+      // Store item locally if API fails
       setItems((currentItems) => {
         const newItem = {
           ...item,
           id: `local-${Date.now()}`,
-          cartId: 0, // Valeur temporaire
+          cartId: 0,
         };
         const newItems = [...currentItems, newItem];
         saveCart(newItems);
         return newItems;
       });
+      
+      throw error;
     }
   };
 

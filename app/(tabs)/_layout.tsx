@@ -56,13 +56,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="profil" // Nom du fichier -> app/(tabs)/profil.tsx
+        name="chatbot"
         options={{
-          title: "Profil",
+          title: "Chatbot",
           tabBarShowLabel: false,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name="person-circle"
+              name="chatbubbles"
               size={size}
               color={focused ? TINT_COLOR : "gray"}
             />
@@ -73,8 +73,27 @@ export default function TabLayout() {
         name="favoris"
         options={{
           title: t("favorites"),
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bookmark" size={size} color={color} />
+          tabBarShowLabel: false,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name="bookmark"
+              size={size}
+              color={focused ? TINT_COLOR : "gray"}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profil" // Nom du fichier -> app/(tabs)/profil.tsx
+        options={{
+          title: "Profil",
+          tabBarShowLabel: false,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name="person-circle"
+              size={size}
+              color={focused ? TINT_COLOR : "gray"}
+            />
           ),
         }}
       />

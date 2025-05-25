@@ -69,26 +69,7 @@ export default function RootLayout() {
               }}
             />
             {/* Définit l'écran de détail d'un produit */}
-            <Stack.Screen
-              name="detail_produit"
-              options={{
-                headerShown: false,
-              }}
-            />
-            {/* Écran du panier */}
-            <Stack.Screen
-              name="panier"
-              options={{
-                headerShown: false,
-              }}
-            />
-            {/* Définit le groupe d'onglets principal */}
-            <Stack.Screen
-              name="(tabs)"
-              options={{
-                headerShown: false,
-              }}
-            />
+                        <Stack.Screen              name="detail_produit"              options={{                headerShown: false,              }}            />            {/* Définit le groupe d'onglets principal */}            <Stack.Screen              name="(tabs)"              options={{                headerShown: false,              }}            />
             {/* Écran de paiement */}
             <Stack.Screen
               name="paiement"

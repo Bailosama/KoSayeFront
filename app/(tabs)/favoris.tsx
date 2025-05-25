@@ -1,26 +1,29 @@
-import React, { useState, useCallback } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useState } from "react";
 import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  Image,
-  StyleSheet,
-  Alert,
   ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
   Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import * as SecureStore from "expo-secure-store";
+import { FILE_URL } from "../../config";
 import api from "../api/api";
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { getToken } from "../utils/auth";
 
 interface Product {
   id: string;
   name: string;
   price: number | string;
   image?: string;
+  variants: { id: string; name: string; price: number | string; stock: number; image?: string }[];
 }
 
 interface WishlistItem {
@@ -30,21 +33,9 @@ interface WishlistItem {
   product: Product;
 }
 
-const useAuthToken = () => {
-  const getToken = async (): Promise<string | null> => {
-    if (Platform.OS !== "web") {
-      return await SecureStore.getItemAsync("authToken");
-    } else {
-      return localStorage.getItem("authToken");
-    }
-  };
-  return { getToken };
-};
-
 export default function Favoris() {
   const [favorites, setFavorites] = useState<WishlistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { getToken } = useAuthToken();
   const { refresh } = useLocalSearchParams();
 
   const fetchFavorites = async (token: string) => {
@@ -66,9 +57,7 @@ export default function Favoris() {
           [{ text: "OK", onPress: () => router.push("/connexion") }]
         );
         if (Platform.OS !== "web") {
-          await SecureStore.deleteItemAsync("authToken");
-        } else {
-          localStorage.removeItem("authToken");
+                    await SecureStore.deleteItemAsync("userToken");        } else {          localStorage.removeItem("userToken");
         }
       } else {
         Alert.alert("Erreur", "Impossible de charger les favoris.");
@@ -123,34 +112,43 @@ export default function Favoris() {
     }, [refresh])
   );
 
-  const renderFavoriteItem = ({ item }: { item: WishlistItem }) => (
-    <TouchableOpacity
-      style={styles.cardContainer}
-      onPress={() => {
-        console.log("Favoris.tsx - Navigation vers detail_produit avec productId :", item.product.id);
-        router.push({
-          pathname: "/detail_produit",
-          params: { productId: item.product.id },
-        });
-      }}
-    >
-      <Image
-        source={{ uri: item.product.image || "https://placehold.co/300x300" }}
-        style={styles.cardImage}
-        resizeMode="cover"
-      />
-      <View style={styles.cardContent}>
-        <Text style={styles.cardName}>{item.product.name}</Text>
-        <Text style={styles.cardPrice}>${item.product.price}</Text>
-      </View>
+  const renderFavoriteItem = ({ item }: { item: WishlistItem }) => {
+    // Construire l'URL de l'image
+    const imageUrl = item.product.variants?.[0]?.image ? 
+      `${FILE_URL}/${item.product.variants[0].image}` :
+      item.product.image ?
+      `${FILE_URL}/${item.product.image}` :
+      `https://picsum.photos/seed/${item.product.id}/200/300`;
+
+    return (
       <TouchableOpacity
-        style={styles.removeButton}
-        onPress={() => handleRemoveFavorite(item.id)}
+        style={styles.cardContainer}
+        onPress={() => {
+          console.log("Favoris.tsx - Navigation vers detail_produit avec productId :", item.product.id);
+          router.push({
+            pathname: "/detail_produit",
+            params: { productId: item.product.id },
+          });
+        }}
       >
-        <Ionicons name="trash-outline" size={20} color="#FF0000" />
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.cardImage}
+          resizeMode="cover"
+        />
+        <View style={styles.cardContent}>
+          <Text style={styles.cardName}>{item.product.name}</Text>
+          <Text style={styles.cardPrice}>${parseFloat(item.product.price.toString()).toFixed(2)}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.removeButton}
+          onPress={() => handleRemoveFavorite(item.id)}
+        >
+          <Ionicons name="trash-outline" size={20} color="#FF0000" />
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -212,34 +210,47 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     flexDirection: "row",
-    backgroundColor: "#f9f9f9",
-    borderRadius: 10,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
     marginBottom: 15,
-    padding: 10,
+    padding: 12,
     borderWidth: 1,
     borderColor: "#eee",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
+    width: 90,
+    height: 90,
+    borderRadius: 10,
+    backgroundColor: "#f5f5f5",
   },
   cardContent: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 15,
   },
   cardName: {
     fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 4,
   },
   cardPrice: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 5,
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#F59E0B",
   },
   removeButton: {
-    padding: 10,
+    padding: 8,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 20,
+    marginLeft: 10,
   },
 });

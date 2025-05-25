@@ -15,7 +15,7 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  loading: boolean;
+  isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (userData: {
@@ -26,6 +26,7 @@ interface AuthContextType {
     phone: string;
     adress: string;
   }) => Promise<void>;
+  checkAuth: () => Promise<boolean>;
   updateUser: (userData: Partial<User>) => void;
 }
 
@@ -42,12 +43,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkAuth = async () => {
     try {
       const token = await getToken();
-      if (token) {
-        const response = await api.get('/user/profile');
-        setUser(response.data.data);
+      if (!token) {
+        setUser(null);
+        return false;
       }
+
+      const response = await api.get('/user/profile');
+      if (response.data?.data) {
+        setUser(response.data.data);
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error('Erreur lors de la vérification de l\'authentification:', error);
+      setUser(null);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -105,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log(JSON.stringify(userData, null, 2));
         setUser(userData);
         
-        //  l'état est mis à jour
+        // Attendre un court instant pour s'assurer que l'état est mis à jour
         await new Promise(resolve => setTimeout(resolve, 500));
         
         console.log('=== REDIRECTION VERS ACCUEIL ===');
@@ -252,8 +262,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, register, updateUser }}>
-      {children}
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        login,
+        logout,
+        register,
+        checkAuth,
+        updateUser
+      }}
+    >
+      {!loading && children}
     </AuthContext.Provider>
   );
 };

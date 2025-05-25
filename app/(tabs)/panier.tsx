@@ -1,18 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  StatusBar,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { FILE_URL } from '../../config';
 import api from '../api/api';
 import { getToken } from '../utils/auth';
 
@@ -30,6 +31,7 @@ interface CartItem {
     name: string;
     price: number;
     stock: number;
+    image?: string;
   };
   quantity: number;
   unit_price: number;
@@ -47,6 +49,11 @@ interface Cart {
   shipping_fee: number;
   total: number;
 }
+
+const getImageUrl = (imageName: string | undefined | null, itemId: string) => {
+  if (!imageName) return `https://picsum.photos/seed/${itemId}/200/300`;
+  return `${FILE_URL}/${imageName}`;
+};
 
 export default function CartScreen() {
   const router = useRouter();
@@ -72,9 +79,11 @@ export default function CartScreen() {
   };
 
   const fetchCart = async () => {
+    let token: string | null = null;
+    
     try {
       setLoading(true);
-      const token = await getToken();
+      token = await getToken();
       
       if (!token) {
         console.log("Aucun token trouvé, redirection vers la connexion");
@@ -83,46 +92,26 @@ export default function CartScreen() {
         return;
       }
 
-      console.log("Récupération des paniers avec le token");
+      console.log("Récupération du panier actif");
       
-      const response = await api.get("/cart", {
+      const response = await api.get("/cart/active", {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 30000 // Augmenter le timeout spécifiquement pour cette requête
       });
       
-      console.log("Réponse de l'API pour les paniers:", response.data);
+      console.log("Réponse de l'API pour le panier actif:", response.data);
 
-      if (response.data && response.data.data) {
-        const draftCart = response.data.data.find((cart: Cart) => cart.status === 'draft');
+      if (response.data?.data) {
+        const cartData = response.data.data;
         
-        if (!draftCart) {
-          console.log("Aucun panier en brouillon trouvé, création d'un nouveau panier");
-          const newCart = await createNewCart(token);
-          setCart({
-            ...newCart,
-            subtotal: 0,
-            discount: 0,
-            shipping_fee: 0,
-            total: 0,
-            items: []
-          });
-          return;
-        }
-
-        console.log("Données du panier reçues:", {
-          id: draftCart.id,
-          userId: draftCart.userId,
-          itemsCount: draftCart.items?.length || 0,
-          status: draftCart.status
-        });
-
-        const processedItems = draftCart.items.map((item: CartItem) => {
+        // Process cart items with proper image URLs
+        const processedItems = cartData.items.map((item: CartItem) => {
           const unitPrice = Number(item.unit_price) || 0;
           const productPrice = Number(item.product.price) || 0;
           const variantPrice = item.variant ? Number(item.variant.price) || 0 : 0;
-
           const finalUnitPrice = unitPrice || variantPrice || productPrice;
 
           return {
@@ -130,22 +119,26 @@ export default function CartScreen() {
             unit_price: finalUnitPrice,
             product: {
               ...item.product,
-              price: productPrice
+              price: productPrice,
+              image: getImageUrl(item.product.image, item.product.id)
             },
             variant: item.variant ? {
               ...item.variant,
-              price: variantPrice
+              price: variantPrice,
+              image: getImageUrl(item.variant.image, item.variant.id)
             } : undefined
           };
         });
 
-        const subtotal = processedItems.reduce((sum: number, item: { unit_price: number; quantity: number; }) => sum + (item.unit_price * item.quantity), 0);
-        const discount = Number(draftCart.discount) || 0;
-        const shipping_fee = Number(draftCart.shipping_fee) || 0;
+        // Calculate totals
+        const subtotal = processedItems.reduce((sum: number, item: { unit_price: number; quantity: number; }) => 
+          sum + (item.unit_price * item.quantity), 0);
+        const discount = Number(cartData.discount) || 0;
+        const shipping_fee = Number(cartData.shipping_fee) || 0;
         const total = subtotal - discount + shipping_fee;
 
         setCart({
-          ...draftCart,
+          ...cartData,
           subtotal,
           discount,
           shipping_fee,
@@ -153,7 +146,8 @@ export default function CartScreen() {
           items: processedItems
         });
       } else {
-        console.log("Aucun panier trouvé, création d'un nouveau panier");
+        // Create new cart if none exists
+        console.log("Aucun panier actif trouvé, création d'un nouveau panier");
         const newCart = await createNewCart(token);
         setCart({
           ...newCart,
@@ -174,28 +168,24 @@ export default function CartScreen() {
       if (error.response?.status === 401) {
         Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
         router.push("/connexion");
-      } else if (error.response?.status === 404) {
-        console.log("Aucun panier trouvé, tentative de création d'un nouveau panier");
+      } else if (error.response?.status === 404 && token) {
+        // Si le panier n'existe pas, on en crée un nouveau silencieusement
         try {
-          const token = await getToken();
-          if (token) {
-            const newCart = await createNewCart(token);
-            setCart({
-              ...newCart,
-              subtotal: 0,
-              discount: 0,
-              shipping_fee: 0,
-              total: 0,
-              items: []
-            });
-          }
+          const newCart = await createNewCart(token);
+          setCart({
+            ...newCart,
+            subtotal: 0,
+            discount: 0,
+            shipping_fee: 0,
+            total: 0,
+            items: []
+          });
         } catch (createError) {
           console.error("Erreur lors de la création du panier:", createError);
-          Alert.alert("Erreur", "Impossible de créer un nouveau panier");
-          setCart(null);
+          Alert.alert("Erreur", "Impossible de créer un nouveau panier. Veuillez réessayer.");
         }
       } else {
-        Alert.alert("Erreur", "Impossible de charger le panier");
+        Alert.alert("Erreur", "Impossible de charger le panier. Veuillez réessayer.");
         setCart(null);
       }
     } finally {
@@ -286,20 +276,48 @@ export default function CartScreen() {
         : `/cart/${cart?.id}/items/${itemId}/decrement`;
 
       console.log("Appel API avec l'endpoint:", endpoint);
-      console.log("Données du panier:", {
-        cartId: cart?.id,
-        itemId,
-        currentQuantity: item.quantity,
-        newQuantity
+
+      // Mettre à jour le state localement avant l'appel API pour une UX plus réactive
+      setCart(prevCart => {
+        if (!prevCart) return null;
+        
+        const updatedItems = prevCart.items.map(cartItem => {
+          if (cartItem.id === itemId) {
+            const updatedQuantity = increment ? cartItem.quantity + 1 : cartItem.quantity - 1;
+            return {
+              ...cartItem,
+              quantity: updatedQuantity
+            };
+          }
+          return cartItem;
+        });
+
+        // Recalculer les totaux
+        const subtotal = updatedItems.reduce((sum, item) => 
+          sum + (item.unit_price * item.quantity), 0);
+        const discount = prevCart.discount || 0;
+        const shipping_fee = prevCart.shipping_fee || 0;
+        const total = subtotal - discount + shipping_fee;
+
+        return {
+          ...prevCart,
+          items: updatedItems,
+          subtotal,
+          total
+        };
       });
 
+      // Faire l'appel API en arrière-plan
       const response = await api.patch(endpoint, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
       console.log("Réponse de l'API:", response.data);
 
-      await fetchCart();
+      // En cas d'erreur de l'API, on peut revenir à l'état précédent
+      if (!response.data.success) {
+        await fetchCart(); // Recharger le panier seulement en cas d'erreur
+      }
     } catch (error: any) {
       console.error("Erreur détaillée lors de la mise à jour de la quantité:", {
         message: error.message,
@@ -307,6 +325,7 @@ export default function CartScreen() {
         status: error.response?.status
       });
       Alert.alert("Erreur", "Impossible de mettre à jour la quantité");
+      await fetchCart(); // Recharger le panier en cas d'erreur
     } finally {
       setProcessing(false);
     }
@@ -323,14 +342,40 @@ export default function CartScreen() {
         return;
       }
 
-      await api.delete(`/cart/${cart?.id}/items/${itemId}`, {
+      // Mettre à jour le state localement avant l'appel API
+      setCart(prevCart => {
+        if (!prevCart) return null;
+
+        const updatedItems = prevCart.items.filter(item => item.id !== itemId);
+        
+        // Recalculer les totaux
+        const subtotal = updatedItems.reduce((sum, item) => 
+          sum + (item.unit_price * item.quantity), 0);
+        const discount = prevCart.discount || 0;
+        const shipping_fee = prevCart.shipping_fee || 0;
+        const total = subtotal - discount + shipping_fee;
+
+        return {
+          ...prevCart,
+          items: updatedItems,
+          subtotal,
+          total
+        };
+      });
+
+      // Faire l'appel API en arrière-plan
+      const response = await api.delete(`/cart/${cart?.id}/items/${itemId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      await fetchCart();
+      // En cas d'erreur de l'API, on recharge le panier pour synchroniser
+      if (!response.data?.success) {
+        await fetchCart();
+      }
     } catch (error: any) {
       console.error("Erreur lors de la suppression de l'article:", error);
       Alert.alert("Erreur", "Impossible de supprimer l'article");
+      await fetchCart(); // Recharger le panier en cas d'erreur
     } finally {
       setProcessing(false);
     }
@@ -380,11 +425,12 @@ export default function CartScreen() {
         {cart.items.map((item) => (
           <View key={item.id} style={styles.cartItem}>
             <Image
-              source={{ uri: item.product.image || 'https://via.placeholder.com/80' }}
+              source={{ 
+                uri: item.variant?.image || item.product.image || 'https://via.placeholder.com/80'
+              }}
               style={styles.productImage}
               onError={(e) => {
                 console.log('Erreur de chargement image:', e.nativeEvent.error);
-                item.product.image = 'https://via.placeholder.com/80';
               }}
             />
             <View style={styles.productInfo}>

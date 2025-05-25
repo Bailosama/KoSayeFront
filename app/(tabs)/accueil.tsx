@@ -1,21 +1,22 @@
-import React, { useState, useEffect } from "react";
-import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  Image,
-  FlatList,
-  Dimensions,
-  ActivityIndicator,
-  Platform,
-  Alert,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  FlatList,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { FILE_URL } from "../../config";
 import api from "../api/api";
 import { useAuth } from "../contexts/AuthContext";
 import { getToken } from '../utils/auth';
@@ -171,26 +172,44 @@ const Header = ({ userName }: { userName: string }) => {
   );
 };
 
-const CategoryList = ({ categories }: { categories: Category[] }) => (
-  <View style={styles.categoryContainer}>
-    {categories.length === 0 ? (
-      <Text style={styles.emptyText}>Aucune catégorie disponible</Text>
-    ) : (
-      <FlatList
-        data={categories}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.categoryItem}>
-            <Text style={styles.categoryText}>{item.name}</Text>
-          </TouchableOpacity>
-        )}
-        keyExtractor={(item) => item.id}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categoryListContent}
-      />
-    )}
-  </View>
-);
+const CategoryList = ({ categories }: { categories: Category[] }) => {
+  const router = useRouter();
+
+  const handleCategoryPress = (categoryId: string, categoryName: string) => {
+    console.log('Navigation vers produits avec catégorie:', categoryName, '(ID:', categoryId, ')');
+    router.push({
+      pathname: "/produits",
+      params: {
+        categoryId,
+        categoryName
+      }
+    });
+  };
+
+  return (
+    <View style={styles.categoryContainer}>
+      {categories.length === 0 ? (
+        <Text style={styles.emptyText}>Aucune catégorie disponible</Text>
+      ) : (
+        <FlatList
+          data={categories}
+          renderItem={({ item }) => (
+            <TouchableOpacity 
+              style={styles.categoryItem}
+              onPress={() => handleCategoryPress(item.id, item.name)}
+            >
+              <Text style={styles.categoryText}>{item.name}</Text>
+            </TouchableOpacity>
+          )}
+          keyExtractor={(item) => item.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryListContent}
+        />
+      )}
+    </View>
+  );
+};
 
 const Banner = () => (
   <View style={styles.bannerContainer}>
@@ -215,38 +234,47 @@ const ProductCard = ({
   item: Product;
   isFavorite: boolean;
   toggleFavorite: (productId: string) => void;
-}) => (
-  <TouchableOpacity
-    style={styles.cardContainer}
-    onPress={() => {
-      console.log('Navigation vers detail_produit avec productId:', item.id);
-      router.push({
-        pathname: "/detail_produit",
-        params: {
-          productId: item.id,
-        },
-      });
-    }}
-  >
-    <Image
-      source={{ uri: item.variants[0]?.image || "https://placehold.co/300x300" }}
-      style={styles.cardImage}
-      resizeMode="cover"
-    />
+}) => {
+  // Construire l'URL de l'image
+  const imageUrl = item.variants?.[0]?.image ? 
+    `${FILE_URL}/${item.variants[0].image}` :
+    item.image ?
+    `${FILE_URL}/${item.image}` :
+    `https://picsum.photos/seed/${item.id}/200/300`;
+
+  return (
     <TouchableOpacity
-      style={styles.heartIconContainer}
-      onPress={() => toggleFavorite(item.id)}
+      style={styles.cardContainer}
+      onPress={() => {
+        console.log('Navigation vers detail_produit avec productId:', item.id);
+        router.push({
+          pathname: "/detail_produit",
+          params: {
+            productId: item.id,
+          },
+        });
+      }}
     >
-      <Ionicons
-        name={isFavorite ? "heart" : "heart-outline"}
-        size={20}
-        color={isFavorite ? "#FF0000" : "#555"}
+      <Image
+        source={{ uri: imageUrl }}
+        style={styles.cardImage}
+        resizeMode="cover"
       />
+      <TouchableOpacity
+        style={styles.heartIconContainer}
+        onPress={() => toggleFavorite(item.id)}
+      >
+        <Ionicons
+          name={isFavorite ? "heart" : "heart-outline"}
+          size={20}
+          color={isFavorite ? "#FF0000" : "#555"}
+        />
+      </TouchableOpacity>
+      <Text style={styles.cardName}>{item.name}</Text>
+      <Text style={styles.cardPrice}>${parseFloat(item.price.toString()).toFixed(2)}</Text>
     </TouchableOpacity>
-    <Text style={styles.cardName}>{item.name}</Text>
-    <Text style={styles.cardPrice}>${item.price}</Text>
-  </TouchableOpacity>
-);
+  );
+};
 
 const ProductSection = ({
   title,

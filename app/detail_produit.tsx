@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import api from "./api/api";
+import { getToken } from "./utils/auth";
 
 interface Product {
   id: number;
@@ -87,17 +88,6 @@ const NUM_COLUMNS = 2;
 const CARD_MARGIN = 10;
 const CARD_WIDTH = (width - CARD_MARGIN * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
 
-const useAuthToken = () => {
-  const getToken = async (): Promise<string | null> => {
-    if (Platform.OS !== 'web') {
-      return await SecureStore.getItemAsync('authToken');
-    } else {
-      return localStorage.getItem('authToken');
-    }
-  };
-  return { getToken };
-};
-
 const ProductDetail = () => {
   const params = useLocalSearchParams();
   const productId = params.id ? parseInt(params.id as string, 10) : 
@@ -114,7 +104,6 @@ const ProductDetail = () => {
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
-  const { getToken } = useAuthToken();
 
   const fetchFavorites = async (token: string) => {
     if (!productId) return;

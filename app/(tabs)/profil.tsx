@@ -26,12 +26,15 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);
-  const [profileImage, setProfileImage] = useState(user?.profilePicture || null);
+  const [profileImage, setProfileImage] = useState(
+    user?.profilePicture || null
+  );
   const [imageError, setImageError] = useState(false);
 
   const pickImage = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
         Alert.alert(
@@ -58,18 +61,21 @@ export default function ProfileScreen() {
 
         // Créer un objet FormData pour l'envoi de l'image
         const formData = new FormData();
-        formData.append('profilePicture', {
-          uri: Platform.OS === 'ios' ? result.assets[0].uri.replace('file://', '') : result.assets[0].uri,
-          type: 'image/jpeg',
-          name: 'profile-picture.jpg',
+        formData.append("profilePicture", {
+          uri:
+            Platform.OS === "ios"
+              ? result.assets[0].uri.replace("file://", "")
+              : result.assets[0].uri,
+          type: "image/jpeg",
+          name: "profile-picture.jpg",
         } as any);
 
         // Envoyer l'image au serveur
-        const response = await api.put('/user/profile', formData, {
+        const response = await api.put("/user/profile", formData, {
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-            'Accept': 'application/json',
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
           },
         });
 
@@ -80,14 +86,17 @@ export default function ProfileScreen() {
           updateUser({ profilePicture: response.data.data.profilePicture });
           Alert.alert("Succès", "Photo de profil mise à jour avec succès");
         } else {
-          throw new Error(response.data.message || "Erreur lors de la mise à jour de la photo");
+          throw new Error(
+            response.data.message || "Erreur lors de la mise à jour de la photo"
+          );
         }
       }
     } catch (error: any) {
       console.error("Erreur lors de la mise à jour de la photo:", error);
       Alert.alert(
         "Erreur",
-        error.response?.data?.message || "Une erreur est survenue lors de la mise à jour de la photo"
+        error.response?.data?.message ||
+          "Une erreur est survenue lors de la mise à jour de la photo"
       );
     }
   };
@@ -97,6 +106,12 @@ export default function ProfileScreen() {
       id: "profil",
       title: "Profil",
       icon: "person" as const,
+      color: "#F59E0B",
+    },
+    {
+      id: "commandes",
+      title: "Commandes",
+      icon: "receipt" as const,
       color: "#F59E0B",
     },
     {
@@ -132,6 +147,9 @@ export default function ProfileScreen() {
         break;
       case "profil":
         router.push("/detail-profil");
+        break;
+      case "commandes":
+        router.push("/commande");
         break;
       case "contact":
         router.push("/contact");
@@ -178,11 +196,14 @@ export default function ProfileScreen() {
         <View style={styles.profileSection}>
           <TouchableOpacity onPress={pickImage}>
             {user.profilePicture && !imageError ? (
-              <Image 
-                source={{ uri: user.profilePicture }} 
+              <Image
+                source={{ uri: user.profilePicture }}
                 style={styles.profileImage}
                 onError={(e) => {
-                  console.log('Erreur de chargement de l\'image:', e.nativeEvent.error);
+                  console.log(
+                    "Erreur de chargement de l'image:",
+                    e.nativeEvent.error
+                  );
                   setImageError(true);
                 }}
               />
@@ -194,7 +215,9 @@ export default function ProfileScreen() {
               </View>
             )}
           </TouchableOpacity>
-          <Text style={styles.name}>{`${user.firstname} ${user.lastname}`}</Text>
+          <Text
+            style={styles.name}
+          >{`${user.firstname} ${user.lastname}`}</Text>
           <Text style={styles.email}>{user.email}</Text>
         </View>
 
