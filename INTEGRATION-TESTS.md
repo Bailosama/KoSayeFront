@@ -65,7 +65,6 @@ describe('Cart Management', () => {
 3. Stock insuffisant
 4. Erreur paiement
 
-## 5. Points à Vérifier
 
 
 ### 5.1 Sécurité
