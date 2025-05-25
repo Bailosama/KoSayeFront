@@ -92,8 +92,3 @@ KoSayeFront/
 - Mise en cache
 - Gestion efficace des états
 
-## 12. Maintenance
-- Logs structurés
-- Gestion des erreurs
-- Documentation inline
-- Tests automatisés 

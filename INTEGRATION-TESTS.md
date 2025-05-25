@@ -67,17 +67,13 @@ describe('Cart Management', () => {
 
 ## 5. Points à Vérifier
 
-### 5.1 Performance
-- Temps de réponse < 2s
-- Chargement images optimisé
-- Cache fonctionnel
 
-### 5.2 Sécurité
+### 5.1 Sécurité
 - Tokens correctement gérés
 - Données sensibles protégées
 - Validation des entrées
 
-### 5.3 UX
+### 5.2 UX
 - Loading states
 - Messages d'erreur
 - Feedback utilisateur
