@@ -16,6 +16,8 @@ import {
   View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AddReviewModal } from '../components/reviews/AddReviewModal';
+import { ReviewsList } from '../components/reviews/ReviewsList';
 import api from "./api/api";
 import { getToken } from "./utils/auth";
 
@@ -90,9 +92,9 @@ const CARD_WIDTH = (width - CARD_MARGIN * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
 
 const ProductDetail = () => {
   const params = useLocalSearchParams();
-  const productId = params.id ? parseInt(params.id as string, 10) : 
-                   params.productId ? parseInt(params.productId as string, 10) : null;
-  
+  const productId = params.id ? parseInt(params.id as string, 10) :
+    params.productId ? parseInt(params.productId as string, 10) : null;
+
   console.log('=== DÉTAILS PRODUIT ===');
   console.log('Params reçus:', params);
   console.log('Product ID converti:', productId);
@@ -104,10 +106,17 @@ const ProductDetail = () => {
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [isReviewModalVisible, setReviewModalVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [hasUserReviewed, setHasUserReviewed] = useState(false);
+  const [userReviewId, setUserReviewId] = useState<string | null>(null);
+
+  // Ajout d'une vérification de sécurité pour productId
+  const safeProductId = productId || 0; // Valeur par défaut si null
 
   const fetchFavorites = async (token: string) => {
     if (!productId) return;
-    
+
     try {
       const response = await api.get("/wishlist", {
         headers: { Authorization: `Bearer ${token}` },
@@ -200,7 +209,7 @@ const ProductDetail = () => {
       console.log("Fetching product with ID:", productId);
       const response = await api.get(`/products/${productId}`);
       console.log("Réponse API:", response.data);
-      
+
       if (response.data && response.data.data) {
         setProduct(response.data.data);
         const token = await getToken();
@@ -218,10 +227,27 @@ const ProductDetail = () => {
     }
   };
 
+  const checkUserReview = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      const response = await api.get(`/reviews/products/${productId}/user-review`);
+      if (response.data && response.data.data) {
+        setHasUserReviewed(true);
+        // Stocker l'ID de l'avis pour la modification
+        setUserReviewId(response.data.data.id);
+      }
+    } catch (error) {
+      console.error('Erreur lors de la vérification de l\'avis:', error);
+    }
+  };
+
   useEffect(() => {
     console.log("Product ID from params:", productId);
     if (productId) {
       fetchProduct();
+      checkUserReview();
     } else {
       setError("ID du produit invalide");
       setLoading(false);
@@ -258,7 +284,7 @@ const ProductDetail = () => {
     } catch (error: any) {
       console.error("ProductDetail - Erreur création panier:", error);
       console.error("ProductDetail - Détails erreur:", error.response?.data);
-      
+
       // If it's a 404 error, try to create a new cart
       if (error.response?.status === 404) {
         try {
@@ -268,7 +294,7 @@ const ProductDetail = () => {
           }, {
             headers: { Authorization: `Bearer ${token}` }
           });
-          
+
           if (createResponse.data && createResponse.data.data) {
             return createResponse.data.data;
           }
@@ -276,7 +302,7 @@ const ProductDetail = () => {
           console.error("ProductDetail - Erreur création panier (404):", createError);
         }
       }
-      
+
       throw new Error("Impossible de créer le panier");
     }
   };
@@ -294,14 +320,14 @@ const ProductDetail = () => {
       const response = await api.get("/cart/active", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       console.log('ProductDetail - Réponse vérification panier:', JSON.stringify(response.data, null, 2));
-      
+
       const cartItems = response.data.data?.items || [];
       console.log('ProductDetail - Items du panier:', JSON.stringify(cartItems, null, 2));
 
       const isInCart = cartItems.some((item: any) => {
-        const matches = item.productId === productId && 
+        const matches = item.productId === productId &&
           (!variantId || item.productVariantId === variantId);
         console.log('ProductDetail - Comparaison item:', {
           itemProductId: item.productId,
@@ -318,13 +344,13 @@ const ProductDetail = () => {
     } catch (error: any) {
       console.error('ProductDetail - Erreur vérification panier:', error);
       console.log('ProductDetail - Détails erreur:', JSON.stringify(error.response?.data, null, 2));
-      
+
       // If it's a 404 error, consider the cart empty
       if (error.response?.status === 404) {
         console.log('ProductDetail - Panier vide ou non trouvé (404)');
         return false;
       }
-      
+
       // For other errors, consider the product not in cart
       return false;
     }
@@ -332,7 +358,7 @@ const ProductDetail = () => {
 
   const handleAddToCart = async () => {
     if (!product) return;
-    
+
     try {
       console.log('=== DÉBUT AJOUT AU PANIER ===');
       console.log('Produit à ajouter:', product);
@@ -397,8 +423,8 @@ const ProductDetail = () => {
       if (isProductInCart) {
         Alert.alert(
           'Information',
-          selectedVariant 
-            ? `La variante ${selectedVariant.name} est déjà dans votre panier` 
+          selectedVariant
+            ? `La variante ${selectedVariant.name} est déjà dans votre panier`
             : `${product.name} est déjà dans votre panier`
         );
         return;
@@ -414,7 +440,7 @@ const ProductDetail = () => {
 
       console.log('Envoi POST /cart-items:', JSON.stringify(payload, null, 2));
       const response = await api.post('/cart-items', payload, {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
@@ -422,9 +448,9 @@ const ProductDetail = () => {
       console.log('Réponse POST /cart-items:', JSON.stringify(response.data, null, 2));
 
       Alert.alert(
-        'Succès', 
-        selectedVariant 
-          ? `La variante ${selectedVariant.name} a été ajoutée au panier` 
+        'Succès',
+        selectedVariant
+          ? `La variante ${selectedVariant.name} a été ajoutée au panier`
           : `${product.name} a été ajouté au panier`,
         [
           {
@@ -434,7 +460,7 @@ const ProductDetail = () => {
           {
             text: 'Voir mon panier',
             onPress: () => {
-        router.push({
+              router.push({
                 pathname: '/panier',
                 params: { refresh: Date.now() }
               });
@@ -448,7 +474,7 @@ const ProductDetail = () => {
         response: error.response?.data,
         status: error.response?.status
       });
-      
+
       let errorMessage = 'Impossible d\'ajouter le produit au panier';
       if (error.response?.status === 401) {
         errorMessage = "Session expirée. Veuillez vous reconnecter.";
@@ -456,8 +482,70 @@ const ProductDetail = () => {
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       }
-      
+
       Alert.alert('Erreur', errorMessage);
+    }
+  };
+
+  const handleAddReview = async (review: { rating: number; comment: string }) => {
+    try {
+      if (!product || !productId) {
+        throw new Error('Produit non trouvé');
+      }
+
+      if (hasUserReviewed && userReviewId) {
+        // Modification d'un avis existant
+        await api.patch(`/reviews/${userReviewId}`, {
+          rating: review.rating,
+          comment: review.comment
+        });
+        Alert.alert('Succès', 'Votre avis a été modifié avec succès');
+      } else {
+        // Création d'un nouvel avis
+        await api.post('/reviews', {
+          productId: product.id,
+          rating: review.rating,
+          comment: review.comment
+        });
+        Alert.alert('Succès', 'Votre avis a été ajouté avec succès');
+      }
+
+      setReviewModalVisible(false);
+      setHasUserReviewed(true);
+      // Rafraîchir la page pour voir le nouvel avis
+      fetchProduct();
+      checkUserReview(); // Mettre à jour l'ID de l'avis si nécessaire
+    } catch (error: any) {
+      console.error('Erreur lors de l\'ajout de l\'avis:', error);
+      throw error; // Propager l'erreur pour qu'elle soit gérée par le modal
+    }
+  };
+
+  const handleReviewButtonClick = async () => {
+    const token = await getToken();
+    if (!token) {
+      Alert.alert('Erreur', 'Veuillez vous connecter pour ajouter un avis');
+      router.push('/connexion');
+      return;
+    }
+
+    if (hasUserReviewed) {
+      Alert.alert(
+        'Avis existant',
+        'Vous avez déjà donné votre avis sur ce produit. Voulez-vous le modifier ?',
+        [
+          {
+            text: 'Annuler',
+            style: 'cancel'
+          },
+          {
+            text: 'Modifier',
+            onPress: () => setReviewModalVisible(true)
+          }
+        ]
+      );
+    } else {
+      setReviewModalVisible(true);
     }
   };
 
@@ -506,31 +594,31 @@ const ProductDetail = () => {
       <ScrollView>
         <View style={styles.imageContainer}>
           <Image
-            source={{ 
-              uri: product.image ? 
-                FILE_URL + '/' + product?.image : 
-                `https://picsum.photos/seed/${product.id}/200/300` 
+            source={{
+              uri: product.image ?
+                FILE_URL + '/' + product?.image :
+                `https://picsum.photos/seed/${product.id}/200/300`
             }}
             style={styles.productImage}
             resizeMode="cover"
           />
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.favoriteButton}
             onPress={toggleFavorite}
           >
-            <Ionicons 
-              name={isFavorite ? "heart" : "heart-outline"} 
-              size={28} 
-              color={isFavorite ? "#FF3B30" : "#000"} 
+            <Ionicons
+              name={isFavorite ? "heart" : "heart-outline"}
+              size={28}
+              color={isFavorite ? "#FF3B30" : "#000"}
 
             />
           </TouchableOpacity>
-      </View>
-      
+        </View>
+
         <View style={styles.infoContainer}>
           <Text style={styles.productName}>{product?.name}</Text>
           <Text style={styles.productPrice}>{product?.price} €</Text>
-          
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Description</Text>
             <Text style={styles.description}>{product?.description}</Text>
@@ -599,6 +687,30 @@ const ProductDetail = () => {
             </View>
           </View>
         </View>
+
+        <View style={styles.reviewsSection}>
+          <View style={styles.reviewsHeader}>
+            <Text style={styles.reviewsTitle}>Avis clients</Text>
+            <TouchableOpacity
+              style={styles.addReviewButton}
+              onPress={handleReviewButtonClick}
+            >
+              <Text style={styles.addReviewButtonText}>
+                {hasUserReviewed ? 'Modifier mon avis' : 'Donner mon avis'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ReviewsList productId={safeProductId} />
+        </View>
+
+        <AddReviewModal
+          visible={isReviewModalVisible}
+          onClose={() => setReviewModalVisible(false)}
+          onSubmit={handleAddReview}
+          productId={safeProductId}
+          isEdit={hasUserReviewed}
+        />
       </ScrollView>
 
       <View style={styles.actionContainer}>
@@ -787,6 +899,34 @@ const styles = StyleSheet.create({
   outOfStockText: {
     color: '#999',
   },
+  reviewsSection: {
+    marginTop: 20,
+    padding: 15,
+  },
+  reviewsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  reviewsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  addReviewButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addReviewButtonText: {
+    color: '#fff',
+    fontWeight: '500',
+  },
 });
 
 export default ProductDetail;
+
+function loadReviews() {
+  throw new Error("Function not implemented.");
+}
