@@ -1,18 +1,17 @@
+import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  StyleSheet,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StatusBar,
-  ScrollView,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Alert,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
 import { useAuth } from "./contexts/AuthContext";
 
 export default function EcranInscription() {
@@ -119,6 +118,7 @@ export default function EcranInscription() {
           <TextInput
             style={styles.input}
             placeholder="Prénom"
+            placeholderTextColor="#999999"
             value={firstname}
             onChangeText={setFirstname}
             autoCapitalize="words"
@@ -127,6 +127,7 @@ export default function EcranInscription() {
           <TextInput
             style={styles.input}
             placeholder="Nom de famille"
+            placeholderTextColor="#999999"
             value={lastname}
             onChangeText={setLastname}
             autoCapitalize="words"
@@ -135,6 +136,7 @@ export default function EcranInscription() {
           <TextInput
             style={styles.input}
             placeholder="E-mail"
+            placeholderTextColor="#999999"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -144,6 +146,7 @@ export default function EcranInscription() {
           <TextInput
             style={styles.input}
             placeholder="Numéro de téléphone"
+            placeholderTextColor="#999999"
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
@@ -152,6 +155,7 @@ export default function EcranInscription() {
           <TextInput
             style={styles.input}
             placeholder="Adresse"
+            placeholderTextColor="#999999"
             value={adress}
             onChangeText={setAdress}
             autoCapitalize="sentences"
@@ -229,8 +233,20 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     marginBottom: 15,
-    color: "#000",
-    borderWidth: 0,
+    color: "#000000",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   boutonInscrire: {
     backgroundColor: "#F59E0B",

@@ -7,7 +7,7 @@ const TOKEN_KEY = 'userToken';
 export const getToken = async (): Promise<string | null> => {
   try {
     let token: string | null = null;
-    
+
     if (Platform.OS === 'web') {
       token = localStorage.getItem(TOKEN_KEY);
     } else {
@@ -20,18 +20,18 @@ export const getToken = async (): Promise<string | null> => {
         token = await AsyncStorage.getItem(TOKEN_KEY);
       }
     }
-    
+
     if (!token) {
       console.log('auth.ts - getToken : Aucun token trouvé');
       return null;
     }
-    
+
     // Vérifier que le token est bien formaté
     if (!token.startsWith('Bearer ')) {
       console.log('auth.ts - getToken : Formatage du token');
       return `Bearer ${token}`;
     }
-    
+
     console.log('auth.ts - getToken : Token trouvé');
     return token;
   } catch (error) {
@@ -42,26 +42,38 @@ export const getToken = async (): Promise<string | null> => {
 
 export const setToken = async (token: string): Promise<void> => {
   try {
+    console.log('=== DÉBUT SAUVEGARDE TOKEN ===');
+    console.log('Plateforme:', Platform.OS);
+
     // Supprimer le préfixe Bearer si présent
     const cleanToken = token.replace('Bearer ', '');
-    
+    console.log('Token nettoyé:', cleanToken ? 'Présent' : 'Absent');
+
     if (Platform.OS === 'web') {
       localStorage.setItem(TOKEN_KEY, cleanToken);
+      console.log('Token sauvegardé dans localStorage');
     } else {
       // Sur mobile, on essaie d'abord SecureStore
       try {
+        console.log('Tentative de sauvegarde dans SecureStore...');
         await SecureStore.setItemAsync(TOKEN_KEY, cleanToken);
+        console.log('Token sauvegardé avec succès dans SecureStore');
       } catch (secureStoreError) {
-        console.log('auth.ts - SecureStore non disponible, utilisation de AsyncStorage');
+        console.error('Erreur SecureStore:', secureStoreError);
+        console.log('Tentative de sauvegarde dans AsyncStorage...');
         // Si SecureStore échoue, on utilise AsyncStorage comme fallback
         await AsyncStorage.setItem(TOKEN_KEY, cleanToken);
+        console.log('Token sauvegardé avec succès dans AsyncStorage');
       }
     }
-    
-    console.log('auth.ts - Token sauvegardé');
-  } catch (error) {
-    console.error('auth.ts - Erreur lors de la sauvegarde du token:', error);
-    throw error; // Propager l'erreur pour la gérer dans le composant
+
+    console.log('=== FIN SAUVEGARDE TOKEN ===');
+  } catch (error: any) {
+    console.error('=== ERREUR SAUVEGARDE TOKEN ===');
+    console.error('Type:', error?.constructor?.name);
+    console.error('Message:', error?.message);
+    console.error('Stack:', error?.stack);
+    throw error;
   }
 };
 
@@ -78,7 +90,7 @@ export const removeToken = async (): Promise<void> => {
       }
       await AsyncStorage.removeItem(TOKEN_KEY);
     }
-    
+
     console.log('auth.ts - Token supprimé');
   } catch (error) {
     console.error('auth.ts - Erreur lors de la suppression du token:', error);

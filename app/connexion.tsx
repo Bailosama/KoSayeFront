@@ -1,21 +1,19 @@
+import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
   StyleSheet,
-  View,
   Text,
   TextInput,
   TouchableOpacity,
-  StatusBar,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import api from "./api/api";
-import { AxiosError } from 'axios';
 import { useAuth } from "./contexts/AuthContext";
 
 export default function EcranConnexion() {
@@ -55,14 +53,14 @@ export default function EcranConnexion() {
       console.log("=== DÉBUT CONNEXION ===");
       console.log("Email:", email);
       console.log("URL de l'API:", api.defaults.baseURL);
-      
+
       await login(email, password);
-      
+
     } catch (error: any) {
       console.error("=== ERREUR DE CONNEXION ===");
       console.error("Message:", error.message);
       console.error("Réponse API:", error.response?.data);
-      
+
       let errorMessage = "Échec de la connexion. Veuillez réessayer.";
       if (error.response) {
         errorMessage = error.response.data.message || Object.values(error.response.data.errors || {})
@@ -113,6 +111,7 @@ export default function EcranConnexion() {
           <TextInput
             style={styles.input}
             placeholder="email@domain.com"
+            placeholderTextColor="#999999"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -121,6 +120,7 @@ export default function EcranConnexion() {
           <TextInput
             style={styles.input}
             placeholder="Mot de passe"
+            placeholderTextColor="#999999"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -227,7 +227,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     marginBottom: 15,
-    color: "#000",
+    color: "#000000",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   boutonContinuer: {
     backgroundColor: "#000000",

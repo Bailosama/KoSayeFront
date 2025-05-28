@@ -1,122 +1,53 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-} from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import api from './api/api';
-import { getToken } from './utils/auth';
-
-interface OrderDetails {
-  id: string;
-  reference: string;
-  totalAmount: number;
-  status: string;
-  paymentMethod: string;
-  transactionId: string;
-  createdAt: string;
-}
+import { router } from 'expo-router';
+import React from 'react';
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CommandeConfirmeeScreen() {
-  const { orderId, amount, paymentMethod, transactionId } = useLocalSearchParams<{
-    orderId: string;
-    amount: string;
-    paymentMethod: string;
-    transactionId: string;
-  }>();
+  const handleRetourAccueil = () => {
+    router.replace('/(tabs)/accueil');
+  };
 
-  const [order, setOrder] = useState<OrderDetails | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchOrderDetails = async () => {
-      try {
-        const token = await getToken();
-        if (!token) {
-          router.replace('/connexion');
-          return;
-        }
-
-        const response = await api.get(`/orders/${orderId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (response.data.success) {
-          setOrder(response.data.data);
-        }
-      } catch (error) {
-        console.error('Erreur lors de la récupération des détails de la commande:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOrderDetails();
-  }, [orderId]);
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#F59E0B" />
-      </SafeAreaView>
-    );
-  }
+  const handleVoirCommandes = () => {
+    router.push('/commande');
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.successContainer}>
-          <Ionicons name="checkmark-circle" size={80} color="#4CAF50" />
-          <Text style={styles.successTitle}>Commande confirmée !</Text>
-          <Text style={styles.successMessage}>
-            Votre commande a été traitée avec succès.
-          </Text>
+      <View style={styles.content}>
+        <View style={styles.iconContainer}>
+          <Ionicons name="checkmark-circle" size={80} color="#F59E0B" />
         </View>
 
-        <View style={styles.detailsContainer}>
-          <Text style={styles.sectionTitle}>Détails de la commande</Text>
-          
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Référence :</Text>
-            <Text style={styles.detailValue}>{order?.reference || 'N/A'}</Text>
-          </View>
+        <Text style={styles.title}>Commande confirmée !</Text>
+        <Text style={styles.description}>
+          Votre paiement a été traité avec succès. Vous recevrez bientôt un email
+          de confirmation avec les détails de votre commande.
+        </Text>
 
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Montant :</Text>
-            <Text style={styles.detailValue}>{amount} FCFA</Text>
-          </View>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.primaryButton]}
+            onPress={handleVoirCommandes}
+          >
+            <Text style={styles.primaryButtonText}>Voir mes commandes</Text>
+          </TouchableOpacity>
 
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Méthode de paiement :</Text>
-            <Text style={styles.detailValue}>
-              {paymentMethod === 'orange' ? 'Orange Money' : 'Areeba'}
-            </Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Transaction ID :</Text>
-            <Text style={styles.detailValue}>{transactionId}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Statut :</Text>
-            <Text style={[styles.detailValue, styles.statusSuccess]}>Confirmée</Text>
-          </View>
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={handleRetourAccueil}
+          >
+            <Text style={styles.secondaryButtonText}>Retour à l'accueil</Text>
+          </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.replace('/(tabs)/accueil')}
-        >
-          <Text style={styles.buttonText}>Retour à l'accueil</Text>
-        </TouchableOpacity>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -124,72 +55,71 @@ export default function CommandeConfirmeeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
   },
   content: {
-    padding: 20,
-  },
-  successContainer: {
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 30,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  successTitle: {
+  iconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 30,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
-    marginTop: 20,
-  },
-  successMessage: {
-    fontSize: 16,
-    color: '#666',
+    marginBottom: 16,
     textAlign: 'center',
-    marginTop: 10,
   },
-  detailsContainer: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
-    padding: 20,
-    marginTop: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  detailLabel: {
+  description: {
     fontSize: 16,
-    color: '#666',
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 40,
+    paddingHorizontal: 20,
   },
-  detailValue: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  statusSuccess: {
-    color: '#4CAF50',
+  buttonContainer: {
+    width: '100%',
+    paddingHorizontal: 20,
   },
   button: {
-    backgroundColor: '#F59E0B',
-    padding: 15,
-    borderRadius: 30,
+    paddingVertical: 15,
+    borderRadius: 8,
     alignItems: 'center',
-    marginTop: 30,
+    marginBottom: 12,
   },
-  buttonText: {
-    color: '#fff',
+  primaryButton: {
+    backgroundColor: '#F59E0B',
+  },
+  secondaryButton: {
+    backgroundColor: '#F5F5F5',
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+  },
+  secondaryButtonText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '500',
   },
 }); 
