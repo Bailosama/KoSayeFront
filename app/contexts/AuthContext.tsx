@@ -257,7 +257,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Si une nouvelle photo de profil est fournie, construire l'URL complète
       if (userData.profilePicture) {
-        const baseUrl = 'http://192.168.1.196:3333';
+        const baseUrl = 'http://192.168.1.144:3333';
         // Vérifier si l'URL est déjà complète
         if (!userData.profilePicture.startsWith('http')) {
           // Si le chemin commence par /uploads, on l'utilise tel quel

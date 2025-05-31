@@ -26,14 +26,8 @@ export const getToken = async (): Promise<string | null> => {
       return null;
     }
 
-    // Vérifier que le token est bien formaté
-    if (!token.startsWith('Bearer ')) {
-      console.log('auth.ts - getToken : Formatage du token');
-      return `Bearer ${token}`;
-    }
-
-    console.log('auth.ts - getToken : Token trouvé');
-    return token;
+    // Toujours retourner le token avec le préfixe Bearer
+    return token.startsWith('Bearer ') ? token : `Bearer ${token}`;
   } catch (error) {
     console.error('auth.ts - Erreur lors de la récupération du token:', error);
     return null;
@@ -45,7 +39,7 @@ export const setToken = async (token: string): Promise<void> => {
     console.log('=== DÉBUT SAUVEGARDE TOKEN ===');
     console.log('Plateforme:', Platform.OS);
 
-    // Supprimer le préfixe Bearer si présent
+    // Supprimer le préfixe Bearer si présent pour le stockage
     const cleanToken = token.replace('Bearer ', '');
     console.log('Token nettoyé:', cleanToken ? 'Présent' : 'Absent');
 

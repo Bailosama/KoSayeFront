@@ -42,13 +42,19 @@ export const AddReviewModal: React.FC<AddReviewModalProps> = ({
         try {
             setInitialLoading(true);
             const response = await api.get(`/reviews/products/${productId}/user-review`);
-            if (response.data) {
-                setRating(response.data.rating);
-                setComment(response.data.comment);
+            if (response.data?.data) {
+                setRating(response.data.data.rating);
+                setComment(response.data.data.comment);
             }
-        } catch (error) {
-            console.error('Erreur lors du chargement de l\'avis:', error);
-            Alert.alert('Erreur', 'Impossible de charger votre avis existant');
+        } catch (error: any) {
+            // Si l'erreur est 404, c'est normal - pas d'avis existant
+            if (error.response?.status !== 404) {
+                console.error('Erreur lors du chargement de l\'avis:', error);
+                Alert.alert('Erreur', 'Impossible de charger votre avis existant');
+            }
+            // Réinitialiser les valeurs
+            setRating(0);
+            setComment('');
         } finally {
             setInitialLoading(false);
         }

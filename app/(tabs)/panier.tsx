@@ -80,11 +80,11 @@ export default function CartScreen() {
 
   const fetchCart = async () => {
     let token: string | null = null;
-    
+
     try {
       setLoading(true);
       token = await getToken();
-      
+
       if (!token) {
         console.log("Aucun token trouvé, redirection vers la connexion");
         Alert.alert("Erreur", "Vous devez être connecté pour voir votre panier");
@@ -93,25 +93,28 @@ export default function CartScreen() {
       }
 
       console.log("Récupération du panier actif");
-      
+
       const response = await api.get("/cart/active", {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        timeout: 30000 // Augmenter le timeout spécifiquement pour cette requête
+        timeout: 30000
       });
-      
+
       console.log("Réponse de l'API pour le panier actif:", response.data);
 
       if (response.data?.data) {
         const cartData = response.data.data;
-        
+
+        // Si items n'existe pas, initialiser un tableau vide
+        const items = cartData.items || [];
+
         // Process cart items with proper image URLs
-        const processedItems = cartData.items.map((item: CartItem) => {
-          const unitPrice = Number(item.unit_price) || 0;
-          const productPrice = Number(item.product.price) || 0;
-          const variantPrice = item.variant ? Number(item.variant.price) || 0 : 0;
+        const processedItems = items.map((item: CartItem) => {
+          const unitPrice = Number(item?.unit_price) || 0;
+          const productPrice = Number(item?.product?.price) || 0;
+          const variantPrice = item?.variant ? Number(item.variant.price) || 0 : 0;
           const finalUnitPrice = unitPrice || variantPrice || productPrice;
 
           return {
@@ -120,18 +123,18 @@ export default function CartScreen() {
             product: {
               ...item.product,
               price: productPrice,
-              image: getImageUrl(item.product.image, item.product.id)
+              image: item.product?.image ? getImageUrl(item.product.image, item.product.id) : null
             },
             variant: item.variant ? {
               ...item.variant,
               price: variantPrice,
-              image: getImageUrl(item.variant.image, item.variant.id)
+              image: item.variant.image ? getImageUrl(item.variant.image, item.variant.id) : null
             } : undefined
           };
         });
 
         // Calculate totals
-        const subtotal = processedItems.reduce((sum: number, item: { unit_price: number; quantity: number; }) => 
+        const subtotal = processedItems.reduce((sum: number, item: { unit_price: number; quantity: number; }) =>
           sum + (item.unit_price * item.quantity), 0);
         const discount = Number(cartData.discount) || 0;
         const shipping_fee = Number(cartData.shipping_fee) || 0;
@@ -139,11 +142,11 @@ export default function CartScreen() {
 
         setCart({
           ...cartData,
+          items: processedItems,
           subtotal,
           discount,
           shipping_fee,
-          total,
-          items: processedItems
+          total
         });
       } else {
         // Create new cart if none exists
@@ -151,34 +154,32 @@ export default function CartScreen() {
         const newCart = await createNewCart(token);
         setCart({
           ...newCart,
+          items: [],
           subtotal: 0,
           discount: 0,
           shipping_fee: 0,
-          total: 0,
-          items: []
+          total: 0
         });
       }
     } catch (error: any) {
       console.error("Erreur lors de la récupération du panier:", {
-        status: error.response?.status,
-        message: error.response?.data?.message,
-        error: error.message
+        error: error.message,
+        response: error.response?.data
       });
 
       if (error.response?.status === 401) {
         Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
         router.push("/connexion");
       } else if (error.response?.status === 404 && token) {
-        // Si le panier n'existe pas, on en crée un nouveau silencieusement
         try {
           const newCart = await createNewCart(token);
           setCart({
             ...newCart,
+            items: [],
             subtotal: 0,
             discount: 0,
             shipping_fee: 0,
-            total: 0,
-            items: []
+            total: 0
           });
         } catch (createError) {
           console.error("Erreur lors de la création du panier:", createError);
@@ -210,7 +211,7 @@ export default function CartScreen() {
       });
 
       const product = response.data.data;
-      
+
       if (!product) {
         console.error("Produit non trouvé");
         return false;
@@ -236,7 +237,7 @@ export default function CartScreen() {
     try {
       setProcessing(true);
       const token = await getToken();
-      
+
       if (!token) {
         Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
         router.push("/connexion");
@@ -251,7 +252,7 @@ export default function CartScreen() {
 
       const newQuantity = increment ? item.quantity + 1 : item.quantity - 1;
       console.log("Nouvelle quantité calculée:", newQuantity);
-      
+
       if (newQuantity === 0) {
         await handleRemoveItem(itemId);
         return;
@@ -271,7 +272,7 @@ export default function CartScreen() {
         return;
       }
 
-      const endpoint = increment 
+      const endpoint = increment
         ? `/cart/${cart?.id}/items/${itemId}/increment`
         : `/cart/${cart?.id}/items/${itemId}/decrement`;
 
@@ -280,7 +281,7 @@ export default function CartScreen() {
       // Mettre à jour le state localement avant l'appel API pour une UX plus réactive
       setCart(prevCart => {
         if (!prevCart) return null;
-        
+
         const updatedItems = prevCart.items.map(cartItem => {
           if (cartItem.id === itemId) {
             const updatedQuantity = increment ? cartItem.quantity + 1 : cartItem.quantity - 1;
@@ -293,7 +294,7 @@ export default function CartScreen() {
         });
 
         // Recalculer les totaux
-        const subtotal = updatedItems.reduce((sum, item) => 
+        const subtotal = updatedItems.reduce((sum, item) =>
           sum + (item.unit_price * item.quantity), 0);
         const discount = prevCart.discount || 0;
         const shipping_fee = prevCart.shipping_fee || 0;
@@ -335,7 +336,7 @@ export default function CartScreen() {
     try {
       setProcessing(true);
       const token = await getToken();
-      
+
       if (!token) {
         Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
         router.push("/connexion");
@@ -347,9 +348,9 @@ export default function CartScreen() {
         if (!prevCart) return null;
 
         const updatedItems = prevCart.items.filter(item => item.id !== itemId);
-        
+
         // Recalculer les totaux
-        const subtotal = updatedItems.reduce((sum, item) => 
+        const subtotal = updatedItems.reduce((sum, item) =>
           sum + (item.unit_price * item.quantity), 0);
         const discount = prevCart.discount || 0;
         const shipping_fee = prevCart.shipping_fee || 0;
@@ -425,7 +426,7 @@ export default function CartScreen() {
         {cart.items.map((item) => (
           <View key={item.id} style={styles.cartItem}>
             <Image
-              source={{ 
+              source={{
                 uri: item.variant?.image || item.product.image || 'https://via.placeholder.com/80'
               }}
               style={styles.productImage}
@@ -499,8 +500,8 @@ export default function CartScreen() {
         </View>
       </View>
 
-      <TouchableOpacity 
-        style={styles.checkoutButton} 
+      <TouchableOpacity
+        style={styles.checkoutButton}
         onPress={handleCheckout}
         disabled={processing}
       >

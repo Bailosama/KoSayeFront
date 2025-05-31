@@ -105,7 +105,7 @@ const Header = ({ userName }: { userName: string }) => {
       });
 
       console.log('Notifications response:', response.data);
-      
+
       if (response.data && typeof response.data.count === 'number') {
         console.log('Setting unread notifications count:', response.data.count);
         setUnreadNotifications(response.data.count);
@@ -134,8 +134,8 @@ const Header = ({ userName }: { userName: string }) => {
     <View style={styles.headerContainer}>
       <View style={styles.userInfoContainer}>
         {user?.profilePicture ? (
-          <Image 
-            source={{ uri: user.profilePicture }} 
+          <Image
+            source={{ uri: user.profilePicture }}
             style={styles.avatar}
           />
         ) : (
@@ -154,7 +154,7 @@ const Header = ({ userName }: { userName: string }) => {
         >
           <Ionicons name="search" size={26} color="#333" />
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.iconButton}
           onPress={handleNotificationPress}
         >
@@ -194,7 +194,7 @@ const CategoryList = ({ categories }: { categories: Category[] }) => {
         <FlatList
           data={categories}
           renderItem={({ item }) => (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.categoryItem}
               onPress={() => handleCategoryPress(item.id, item.name)}
             >
@@ -236,11 +236,11 @@ const ProductCard = ({
   toggleFavorite: (productId: string) => void;
 }) => {
   // Construire l'URL de l'image
-  const imageUrl = item.variants?.[0]?.image ? 
+  const imageUrl = item.variants?.[0]?.image ?
     `${FILE_URL}/${item.variants[0].image}` :
     item.image ?
-    `${FILE_URL}/${item.image}` :
-    `https://picsum.photos/seed/${item.id}/200/300`;
+      `${FILE_URL}/${item.image}` :
+      `https://picsum.photos/seed/${item.id}/200/300`;
 
   return (
     <TouchableOpacity
@@ -346,7 +346,7 @@ export default function AccueilScreen() {
       });
       console.log('=== DONNÉES UTILISATEUR RÉCUPÉRÉES ===');
       console.log('Données:', response.data.data);
-      
+
       if (response.data.data) {
         updateUserData(response.data.data);
       }
@@ -390,10 +390,10 @@ export default function AccueilScreen() {
       router.push("/connexion");
       return;
     }
-  
+
     const isFavorite = favorites.includes(productId);
     const previousFavorites = [...favorites];
-  
+
     try {
       console.log("Accueil.tsx - toggleFavorite - productId :", productId, "isFavorite :", isFavorite);
       if (isFavorite) {

@@ -235,11 +235,15 @@ const ProductDetail = () => {
       const response = await api.get(`/reviews/products/${productId}/user-review`);
       if (response.data && response.data.data) {
         setHasUserReviewed(true);
-        // Stocker l'ID de l'avis pour la modification
         setUserReviewId(response.data.data.id);
       }
-    } catch (error) {
-      console.error('Erreur lors de la vérification de l\'avis:', error);
+    } catch (error: any) {
+      // Si l'erreur est 404, c'est normal - l'utilisateur n'a pas encore laissé d'avis
+      if (error.response?.status !== 404) {
+        console.error('Erreur lors de la vérification de l\'avis:', error);
+      }
+      setHasUserReviewed(false);
+      setUserReviewId(null);
     }
   };
 
@@ -610,7 +614,6 @@ const ProductDetail = () => {
               name={isFavorite ? "heart" : "heart-outline"}
               size={28}
               color={isFavorite ? "#FF3B30" : "#000"}
-
             />
           </TouchableOpacity>
         </View>
@@ -636,40 +639,42 @@ const ProductDetail = () => {
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Variantes disponibles</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {product?.variants?.map((variant, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.variantCard,
-                    selectedVariant?.id === variant.id && styles.selectedVariant,
-                    variant.stock === 0 && styles.outOfStockVariant
-                  ]}
-                  onPress={() => {
-                    if (variant.stock > 0) {
-                      setSelectedVariant(variant);
-                    } else {
-                      Alert.alert('Stock épuisé', 'Cette variante n\'est plus disponible en stock.');
-                    }
-                  }}
-                >
-                  <Text style={[
-                    styles.variantName,
-                    variant.stock === 0 && styles.outOfStockText
-                  ]}>{variant.name}</Text>
-                  <Text style={styles.variantPrice}>{variant.price} €</Text>
-                  <Text style={[
-                    styles.variantStock,
-                    variant.stock === 0 && styles.outOfStockText
-                  ]}>
-                    {variant.stock > 0 ? `En stock: ${variant.stock}` : 'Rupture de stock'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+          {product?.variants && product.variants.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Variantes disponibles</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {product.variants.map((variant, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.variantCard,
+                      selectedVariant?.id === variant.id && styles.selectedVariant,
+                      variant.stock === 0 && styles.outOfStockVariant
+                    ]}
+                    onPress={() => {
+                      if (variant.stock > 0) {
+                        setSelectedVariant(variant);
+                      } else {
+                        Alert.alert('Stock épuisé', 'Cette variante n\'est plus disponible en stock.');
+                      }
+                    }}
+                  >
+                    <Text style={[
+                      styles.variantName,
+                      variant.stock === 0 && styles.outOfStockText
+                    ]}>{variant.name}</Text>
+                    <Text style={styles.variantPrice}>{variant.price} €</Text>
+                    <Text style={[
+                      styles.variantStock,
+                      variant.stock === 0 && styles.outOfStockText
+                    ]}>
+                      {variant.stock > 0 ? `En stock: ${variant.stock}` : 'Rupture de stock'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Informations supplémentaires</Text>
@@ -686,22 +691,22 @@ const ProductDetail = () => {
               </Text>
             </View>
           </View>
-        </View>
 
-        <View style={styles.reviewsSection}>
-          <View style={styles.reviewsHeader}>
-            <Text style={styles.reviewsTitle}>Avis clients</Text>
-            <TouchableOpacity
-              style={styles.addReviewButton}
-              onPress={handleReviewButtonClick}
-            >
-              <Text style={styles.addReviewButtonText}>
-                {hasUserReviewed ? 'Modifier mon avis' : 'Donner mon avis'}
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.reviewsSection}>
+            <View style={styles.reviewsHeader}>
+              <Text style={styles.reviewsTitle}>Avis clients</Text>
+              <TouchableOpacity
+                style={styles.addReviewButton}
+                onPress={handleReviewButtonClick}
+              >
+                <Text style={styles.addReviewButtonText}>
+                  {hasUserReviewed ? 'Modifier mon avis' : 'Donner mon avis'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <ReviewsList productId={safeProductId} />
           </View>
-
-          <ReviewsList productId={safeProductId} />
         </View>
 
         <AddReviewModal
@@ -744,10 +749,19 @@ const styles = StyleSheet.create({
   imageContainer: {
     width: '100%',
     height: 300,
+    position: 'relative',
   },
   productImage: {
     width: '100%',
     height: '100%',
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 20,
+    padding: 8,
   },
   infoContainer: {
     padding: 16,
@@ -808,10 +822,16 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#F59E0B',
   },
+  outOfStockVariant: {
+    opacity: 0.6,
+  },
   variantName: {
     fontSize: 16,
     fontWeight: '500',
     marginBottom: 4,
+  },
+  outOfStockText: {
+    color: '#999',
   },
   variantPrice: {
     fontSize: 16,
@@ -840,87 +860,62 @@ const styles = StyleSheet.create({
   },
   addToCartButton: {
     backgroundColor: '#F59E0B',
-    padding: 16,
     borderRadius: 8,
+    padding: 16,
     alignItems: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#E0E0E0',
   },
   buttonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
   errorContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   errorText: {
     fontSize: 16,
-    color: "#666",
-    marginBottom: 20,
-    textAlign: "center",
+    color: '#FF3B30',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: "#F59E0B",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    backgroundColor: '#F59E0B',
     borderRadius: 8,
+    padding: 12,
   },
   retryButtonText: {
-    color: "white",
+    color: '#fff',
     fontSize: 16,
-    fontWeight: "bold",
-  },
-  favoriteButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 20,
-    padding: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  disabledButton: {
-    backgroundColor: '#ccc',
-    opacity: 0.7,
-  },
-  outOfStockVariant: {
-    backgroundColor: '#F5F5F5',
-    opacity: 0.7,
-  },
-  outOfStockText: {
-    color: '#999',
+    fontWeight: '600',
   },
   reviewsSection: {
-    marginTop: 20,
-    padding: 15,
+    marginTop: 24,
   },
   reviewsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 16,
   },
   reviewsTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   addReviewButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 15,
+    backgroundColor: '#F59E0B',
+    borderRadius: 8,
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
   },
   addReviewButtonText: {
     color: '#fff',
+    fontSize: 14,
     fontWeight: '500',
   },
 });

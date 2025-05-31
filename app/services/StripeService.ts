@@ -4,12 +4,18 @@ export class StripeService {
     /**
      * Crée une intention de paiement
      */
-    static async createPaymentIntent(amount: number, currency: string = 'eur') {
+    static async createPaymentIntent(amount: number, orderId: number, currency: string = 'eur') {
         try {
+            // Convertir le montant en centimes pour Stripe
+            const amountInCents = Math.round(amount * 100);
+            console.log('StripeService - Création payment intent:', { amount: amountInCents, currency, orderId });
+
             const response = await api.post('/payments/create-payment-intent', {
-                amount,
+                amount: amountInCents,
                 currency,
+                orderId
             });
+            console.log('StripeService - Réponse payment intent:', response.data);
             return response.data;
         } catch (error) {
             console.error('Erreur création payment intent:', error);

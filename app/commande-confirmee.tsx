@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Platform,
   StyleSheet,
@@ -9,8 +9,38 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import api from './api/api';
+import { useCart } from './contexts/CartContext';
+import { getToken } from './utils/auth';
 
 export default function CommandeConfirmeeScreen() {
+  const { clearCart } = useCart();
+
+  useEffect(() => {
+    const initializeNewCart = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+
+        // Vider le panier actuel
+        await clearCart();
+
+        // Créer un nouveau panier
+        await api.post("/cart", {
+          status: "draft",
+          items: []
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+      } catch (error) {
+        console.error("Erreur lors de l'initialisation du nouveau panier:", error);
+      }
+    };
+
+    initializeNewCart();
+  }, []);
+
   const handleRetourAccueil = () => {
     router.replace('/(tabs)/accueil');
   };

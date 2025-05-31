@@ -48,12 +48,17 @@ interface Order {
   shippedAt: string | null;
   deliveredAt: string | null;
   items: OrderItem[];
+  shippingAddressId: number | null;
   shippingAddress: {
+    id: number;
     recipientName: string;
+    street: string;
     city: string;
+    postalCode: string;
+    country: string;
     phone: string | null;
     additionalInfo: string | null;
-  };
+  } | null;
 }
 
 export default function CommandeScreen() {
@@ -71,13 +76,13 @@ export default function CommandeScreen() {
     try {
       console.log('CommandeScreen - Vérification authentification');
       const isAuth = await checkAuth();
-      
+
       if (!isAuth) {
         console.log('CommandeScreen - Non authentifié, redirection vers connexion');
         router.push("/connexion");
         return false;
       }
-      
+
       return true;
     } catch (error) {
       console.error('CommandeScreen - Erreur vérification auth:', error);
@@ -106,10 +111,15 @@ export default function CommandeScreen() {
         },
       });
 
-      console.log('CommandeScreen - Commandes récupérées:', response.data);
+      console.log('CommandeScreen - Commandes récupérées:', JSON.stringify(response.data, null, 2));
       // Ensure we have an array of orders
       const newOrders = Array.isArray(response.data.data?.data) ? response.data.data.data : [];
-      
+
+      // Log des adresses pour chaque commande
+      newOrders.forEach((order: Order, index: number) => {
+        console.log(`CommandeScreen - Adresse de la commande ${index}:`, JSON.stringify(order.shippingAddress, null, 2));
+      });
+
       // Trier les commandes par date (les plus récentes en premier)
       const sortedOrders = newOrders.sort((a: Order, b: Order) => {
         const dateA = new Date(a.createdAt).getTime();
@@ -153,7 +163,7 @@ export default function CommandeScreen() {
     try {
       setProcessingPayment(orderId);
       const token = await getToken();
-      
+
       // Initier le processus de paiement
       const processResponse = await api.post(
         "/api/v1/payment/process",
@@ -164,9 +174,9 @@ export default function CommandeScreen() {
       // Vérifier le paiement
       const verifyResponse = await api.post(
         "/api/v1/payment/verify",
-        { 
+        {
           orderId,
-          paymentId: processResponse.data.paymentId 
+          paymentId: processResponse.data.paymentId
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -192,7 +202,7 @@ export default function CommandeScreen() {
     try {
       setCancellingOrder(orderId);
       const token = await getToken();
-      
+
       await api.delete(`/api/v1/orders/cancel/${orderId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -336,6 +346,31 @@ export default function CommandeScreen() {
     return null;
   };
 
+  const renderOrderAddress = (order: Order) => {
+    if (!order.shippingAddress) {
+      return (
+        <View style={styles.addressContainer}>
+          <Text style={styles.addressText}>Adresse non spécifiée</Text>
+        </View>
+      );
+    }
+
+    const { recipientName, street, city, postalCode, country, phone } = order.shippingAddress;
+    const fullAddress = [street, city, postalCode, country].filter(Boolean).join(", ");
+
+    return (
+      <View style={styles.addressContainer}>
+        <Text style={styles.addressText}>
+          Livraison à {recipientName}
+        </Text>
+        <Text style={styles.addressDetails}>
+          {fullAddress}
+          {phone && ` • ${phone}`}
+        </Text>
+      </View>
+    );
+  };
+
   const renderOrderItem = ({ item }: { item: Order }) => (
     <TouchableOpacity
       style={styles.orderCard}
@@ -389,15 +424,7 @@ export default function CommandeScreen() {
       {renderOrderActions(item)}
 
       <View style={styles.orderFooter}>
-        <View style={styles.addressContainer}>
-          <Text style={styles.addressText}>
-            Livraison à {item.shippingAddress?.recipientName || 'Non spécifié'}
-          </Text>
-          <Text style={styles.addressDetails}>
-            {item.shippingAddress?.city || 'Adresse non spécifiée'}
-            {item.shippingAddress?.phone && ` • ${item.shippingAddress.phone}`}
-          </Text>
-        </View>
+        {renderOrderAddress(item)}
         <Ionicons name="chevron-forward" size={20} color="#6B7280" />
       </View>
     </TouchableOpacity>
