@@ -47,6 +47,7 @@ interface Order {
   confirmedAt: string | null;
   shippedAt: string | null;
   deliveredAt: string | null;
+  isHidden: boolean;
   items: OrderItem[];
   shippingAddressId: number | null;
   shippingAddress: {
@@ -71,6 +72,9 @@ export default function CommandeScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [processingPayment, setProcessingPayment] = useState<number | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<number | null>(null);
+  const [showAllOrders, setShowAllOrders] = useState(false);
+  const [showHiddenOrders, setShowHiddenOrders] = useState(false);
+  const [hidingOrder, setHidingOrder] = useState<number | null>(null);
 
   const verifyAuthentication = async () => {
     try {
@@ -105,37 +109,26 @@ export default function CommandeScreen() {
       }
 
       console.log('CommandeScreen - Récupération des commandes');
-      const response = await api.get(`/orders?page=${pageNum}&limit=10`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await api.get(
+        `/orders?page=${pageNum}&limit=10&sort=createdAt:desc&showAll=${showAllOrders}&showHidden=${showHiddenOrders}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       console.log('CommandeScreen - Commandes récupérées:', JSON.stringify(response.data, null, 2));
-      // Ensure we have an array of orders
       const newOrders = Array.isArray(response.data.data?.data) ? response.data.data.data : [];
-
-      // Log des adresses pour chaque commande
-      newOrders.forEach((order: Order, index: number) => {
-        console.log(`CommandeScreen - Adresse de la commande ${index}:`, JSON.stringify(order.shippingAddress, null, 2));
-      });
-
-      // Trier les commandes par date (les plus récentes en premier)
-      const sortedOrders = newOrders.sort((a: Order, b: Order) => {
-        const dateA = new Date(a.createdAt).getTime();
-        const dateB = new Date(b.createdAt).getTime();
-        return dateB - dateA;
-      });
 
       setHasMore(newOrders.length === 10);
 
       if (shouldRefresh) {
-        setOrders(sortedOrders);
+        setOrders(newOrders);
       } else {
         setOrders((prev) => {
-          // Fusionner les anciennes et nouvelles commandes et les trier
-          const allOrders = [...prev, ...sortedOrders];
-          return allOrders.sort((a: Order, b: Order) => {
+          const allOrders = [...prev, ...newOrders];
+          return allOrders.sort((a, b) => {
             const dateA = new Date(a.createdAt).getTime();
             const dateB = new Date(b.createdAt).getTime();
             return dateB - dateA;
@@ -166,14 +159,14 @@ export default function CommandeScreen() {
 
       // Initier le processus de paiement
       const processResponse = await api.post(
-        "/api/v1/payment/process",
+        `/payments/process`,
         { orderId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       // Vérifier le paiement
       const verifyResponse = await api.post(
-        "/api/v1/payment/verify",
+        `/payments/verify`,
         {
           orderId,
           paymentId: processResponse.data.paymentId
@@ -182,6 +175,13 @@ export default function CommandeScreen() {
       );
 
       if (verifyResponse.data.success) {
+        // Mettre à jour le statut de la commande
+        await api.patch(
+          `/orders/${orderId}/status`,
+          { status: 'paid' },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
         Alert.alert("Succès", "Paiement effectué avec succès");
         fetchOrders(1, true);
       } else {
@@ -203,12 +203,22 @@ export default function CommandeScreen() {
       setCancellingOrder(orderId);
       const token = await getToken();
 
-      await api.delete(`/api/v1/orders/cancel/${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch(
+        `/orders/${orderId}/status`,
+        { status: 'cancelled' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-      Alert.alert("Succès", "La commande a été annulée avec succès");
-      fetchOrders(1, true);
+      // Mise à jour optimiste de l'interface
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order.id === orderId
+            ? { ...order, status: 'cancelled' }
+            : order
+        )
+      );
+
+      Alert.alert("Succès", "La commande a été annulée");
     } catch (error) {
       console.error("Erreur lors de l'annulation:", error);
       Alert.alert(
@@ -217,6 +227,131 @@ export default function CommandeScreen() {
       );
     } finally {
       setCancellingOrder(null);
+    }
+  };
+
+  const handleHideOrder = async (orderId: number) => {
+    try {
+      setHidingOrder(orderId);
+      const order = orders.find(o => o.id === orderId);
+
+      if (!order || !['paid', 'cancelled'].includes(order.status)) {
+        Alert.alert(
+          "Erreur",
+          "Seules les commandes payées ou annulées peuvent être masquées."
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Masquer la commande",
+        "Êtes-vous sûr de vouloir masquer cette commande de l'historique ?",
+        [
+          {
+            text: "Annuler",
+            style: "cancel"
+          },
+          {
+            text: "Masquer",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                const token = await getToken();
+                await api.patch(`/orders/${orderId}/visibility`, { isHidden: true }, {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                  }
+                });
+
+                // Mise à jour optimiste de l'interface
+                setOrders(prevOrders => prevOrders.filter(order => order.id !== orderId));
+                Alert.alert("Succès", "La commande a été masquée de l'historique");
+              } catch (error) {
+                console.error("Erreur lors du masquage:", error);
+                Alert.alert(
+                  "Erreur",
+                  "Impossible de masquer la commande. Veuillez réessayer."
+                );
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error("Erreur lors du masquage:", error);
+      Alert.alert("Erreur", "Une erreur est survenue. Veuillez réessayer.");
+    } finally {
+      setHidingOrder(null);
+    }
+  };
+
+  const handleHideAllCompletedOrders = async () => {
+    try {
+      const completedOrders = orders.filter(
+        order => order.status === "cancelled" || order.paymentStatus === "paid"
+      );
+
+      if (completedOrders.length === 0) {
+        Alert.alert("Information", "Aucune commande terminée à masquer.");
+        return;
+      }
+
+      Alert.alert(
+        "Masquer toutes les commandes terminées",
+        `Êtes-vous sûr de vouloir masquer les ${completedOrders.length} commandes terminées de l'historique ?`,
+        [
+          {
+            text: "Annuler",
+            style: "cancel"
+          },
+          {
+            text: "Masquer tout",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                setLoading(true);
+                const token = await getToken();
+
+                // Masquer toutes les commandes terminées en parallèle
+                await Promise.all(
+                  completedOrders.map(order =>
+                    api.patch(`/orders/${order.id}/visibility`, { isHidden: true }, {
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                      }
+                    })
+                  )
+                );
+
+                // Mise à jour optimiste de l'interface
+                setOrders(prevOrders =>
+                  prevOrders.filter(order =>
+                    !(order.status === "cancelled" || order.paymentStatus === "paid")
+                  )
+                );
+
+                Alert.alert(
+                  "Succès",
+                  `${completedOrders.length} commande${completedOrders.length > 1 ? 's' : ''} masquée${completedOrders.length > 1 ? 's' : ''} avec succès`
+                );
+              } catch (error) {
+                console.error("Erreur lors du masquage multiple:", error);
+                Alert.alert(
+                  "Erreur",
+                  "Impossible de masquer certaines commandes. Veuillez réessayer."
+                );
+              } finally {
+                setLoading(false);
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error("Erreur lors du masquage multiple:", error);
+      Alert.alert("Erreur", "Une erreur est survenue. Veuillez réessayer.");
     }
   };
 
@@ -343,6 +478,25 @@ export default function CommandeScreen() {
         </View>
       );
     }
+
+    if (order.status === "cancelled" || order.paymentStatus === "paid") {
+      return (
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.hideButton]}
+            onPress={() => handleHideOrder(order.id)}
+            disabled={hidingOrder === order.id}
+          >
+            {hidingOrder === order.id ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.actionButtonText}>Masquer de l'historique</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     return null;
   };
 
@@ -408,8 +562,8 @@ export default function CommandeScreen() {
       </View>
 
       <View style={styles.itemsPreview}>
-        {item.items.slice(0, 2).map((orderItem, index) => (
-          <Text key={index} style={styles.itemText}>
+        {item.items.slice(0, 2).map((orderItem) => (
+          <Text key={`${item.id}-${orderItem.id}`} style={styles.itemText}>
             {orderItem.quantity}x {orderItem.productName}
             {orderItem.variantName ? ` - ${orderItem.variantName}` : ""}
           </Text>
@@ -440,6 +594,51 @@ export default function CommandeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, Platform.OS === 'ios' ? styles.iosContainer : null]}>
+      <View style={styles.header}>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.filterButton, showAllOrders && styles.filterButtonActive]}
+            onPress={() => {
+              setShowAllOrders(!showAllOrders);
+              setPage(1);
+              fetchOrders(1, true);
+            }}
+          >
+            <Text style={[styles.filterButtonText, showAllOrders && styles.filterButtonTextActive]}>
+              {showAllOrders ? "Masquer les commandes terminées" : "Afficher toutes les commandes"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, showHiddenOrders && styles.filterButtonActive]}
+            onPress={() => {
+              setShowHiddenOrders(!showHiddenOrders);
+              setPage(1);
+              fetchOrders(1, true);
+            }}
+          >
+            <Text style={[styles.filterButtonText, showHiddenOrders && styles.filterButtonTextActive]}>
+              {showHiddenOrders ? "Masquer commandes cachées" : "Afficher commandes cachées"}
+            </Text>
+          </TouchableOpacity>
+          {orders.some(order =>
+            (order.status === "cancelled" || order.paymentStatus === "paid") && !order.isHidden
+          ) && (
+              <TouchableOpacity
+                style={styles.hideAllButton}
+                onPress={handleHideAllCompletedOrders}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.hideAllButtonText}>
+                    Tout masquer
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
+        </View>
+      </View>
       <FlatList
         data={orders}
         renderItem={renderOrderItem}
@@ -651,6 +850,9 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: "#EF4444",
   },
+  hideButton: {
+    backgroundColor: '#6B7280',
+  },
   actionButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
@@ -658,5 +860,45 @@ const styles = StyleSheet.create({
   },
   iosContainer: {
     paddingTop: 20,
+  },
+  header: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: 8,
+  },
+  filterButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+  },
+  filterButtonActive: {
+    backgroundColor: '#F59E0B',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  filterButtonTextActive: {
+    color: '#FFFFFF',
+  },
+  hideAllButton: {
+    backgroundColor: '#6B7280',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+  },
+  hideAllButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

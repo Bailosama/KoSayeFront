@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,320 +13,27 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { FILE_URL } from '../../config';
-import api from '../api/api';
-import { getToken } from '../utils/auth';
-
-interface CartItem {
-  id: string;
-  product: {
-    id: string;
-    name: string;
-    price: number;
-    image?: string;
-    stock: number;
-  };
-  variant?: {
-    id: string;
-    name: string;
-    price: number;
-    stock: number;
-    image?: string;
-  };
-  quantity: number;
-  unit_price: number;
-}
-
-interface Cart {
-  id: string;
-  reference: string;
-  status: string;
-  userId: number;
-  createdAt: string;
-  items: CartItem[];
-  subtotal: number;
-  discount: number;
-  shipping_fee: number;
-  total: number;
-}
-
-const getImageUrl = (imageName: string | undefined | null, itemId: string) => {
-  if (!imageName) return `https://picsum.photos/seed/${itemId}/200/300`;
-  return `${FILE_URL}/${imageName}`;
-};
+import { useCart } from '../contexts/CartContext';
 
 export default function CartScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState<Cart | null>(null);
+  const { items, loading, totals, updateQuantity, removeFromCart, refreshCart } = useCart();
   const [processing, setProcessing] = useState(false);
 
-  const createNewCart = async (token: string) => {
-    try {
-      console.log("Création d'un nouveau panier");
-      const response = await api.post("/cart", {
-        status: "draft",
-        items: []
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      console.log("Nouveau panier créé:", response.data);
-      return response.data.data;
-    } catch (error: any) {
-      console.error("Erreur lors de la création du panier:", error);
-      throw error;
-    }
-  };
-
-  const fetchCart = async () => {
-    let token: string | null = null;
-
-    try {
-      setLoading(true);
-      token = await getToken();
-
-      if (!token) {
-        console.log("Aucun token trouvé, redirection vers la connexion");
-        Alert.alert("Erreur", "Vous devez être connecté pour voir votre panier");
-        router.push("/connexion");
-        return;
-      }
-
-      console.log("Récupération du panier actif");
-
-      const response = await api.get("/cart/active", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      });
-
-      console.log("Réponse de l'API pour le panier actif:", response.data);
-
-      if (response.data?.data) {
-        const cartData = response.data.data;
-
-        // Si items n'existe pas, initialiser un tableau vide
-        const items = cartData.items || [];
-
-        // Process cart items with proper image URLs
-        const processedItems = items.map((item: CartItem) => {
-          const unitPrice = Number(item?.unit_price) || 0;
-          const productPrice = Number(item?.product?.price) || 0;
-          const variantPrice = item?.variant ? Number(item.variant.price) || 0 : 0;
-          const finalUnitPrice = unitPrice || variantPrice || productPrice;
-
-          return {
-            ...item,
-            unit_price: finalUnitPrice,
-            product: {
-              ...item.product,
-              price: productPrice,
-              image: item.product?.image ? getImageUrl(item.product.image, item.product.id) : null
-            },
-            variant: item.variant ? {
-              ...item.variant,
-              price: variantPrice,
-              image: item.variant.image ? getImageUrl(item.variant.image, item.variant.id) : null
-            } : undefined
-          };
-        });
-
-        // Calculate totals
-        const subtotal = processedItems.reduce((sum: number, item: { unit_price: number; quantity: number; }) =>
-          sum + (item.unit_price * item.quantity), 0);
-        const discount = Number(cartData.discount) || 0;
-        const shipping_fee = Number(cartData.shipping_fee) || 0;
-        const total = subtotal - discount + shipping_fee;
-
-        setCart({
-          ...cartData,
-          items: processedItems,
-          subtotal,
-          discount,
-          shipping_fee,
-          total
-        });
-      } else {
-        // Create new cart if none exists
-        console.log("Aucun panier actif trouvé, création d'un nouveau panier");
-        const newCart = await createNewCart(token);
-        setCart({
-          ...newCart,
-          items: [],
-          subtotal: 0,
-          discount: 0,
-          shipping_fee: 0,
-          total: 0
-        });
-      }
-    } catch (error: any) {
-      console.error("Erreur lors de la récupération du panier:", {
-        error: error.message,
-        response: error.response?.data
-      });
-
-      if (error.response?.status === 401) {
-        Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
-        router.push("/connexion");
-      } else if (error.response?.status === 404 && token) {
-        try {
-          const newCart = await createNewCart(token);
-          setCart({
-            ...newCart,
-            items: [],
-            subtotal: 0,
-            discount: 0,
-            shipping_fee: 0,
-            total: 0
-          });
-        } catch (createError) {
-          console.error("Erreur lors de la création du panier:", createError);
-          Alert.alert("Erreur", "Impossible de créer un nouveau panier. Veuillez réessayer.");
-        }
-      } else {
-        Alert.alert("Erreur", "Impossible de charger le panier. Veuillez réessayer.");
-        setCart(null);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       console.log('CartScreen - Rechargement des données du panier');
-      fetchCart();
-    }, [])
+      refreshCart();
+    }, [refreshCart])
   );
-
-  const checkStock = async (productId: string, variantId: string | null, quantity: number) => {
-    try {
-      const token = await getToken();
-      if (!token) return false;
-
-      const response = await api.get(`/products/${productId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      const product = response.data.data;
-
-      if (!product) {
-        console.error("Produit non trouvé");
-        return false;
-      }
-
-      if (variantId) {
-        const variant = product.variants?.find((v: any) => v.id === variantId);
-        if (!variant) {
-          console.error("Variante non trouvée");
-          return false;
-        }
-        return variant.stock >= quantity;
-      }
-
-      return product.stock >= quantity;
-    } catch (error: any) {
-      console.error("Erreur lors de la vérification du stock:", error);
-      return true;
-    }
-  };
 
   const handleUpdateQuantity = async (itemId: string, increment: boolean) => {
     try {
       setProcessing(true);
-      const token = await getToken();
-
-      if (!token) {
-        Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
-        router.push("/connexion");
-        return;
-      }
-
-      const item = cart?.items.find(i => i.id === itemId);
-      if (!item) {
-        console.log("Item non trouvé dans le panier:", itemId);
-        return;
-      }
-
-      const newQuantity = increment ? item.quantity + 1 : item.quantity - 1;
-      console.log("Nouvelle quantité calculée:", newQuantity);
-
-      if (newQuantity === 0) {
-        await handleRemoveItem(itemId);
-        return;
-      }
-
-      const hasStock = await checkStock(
-        item.product.id,
-        item.variant?.id || null,
-        newQuantity
-      );
-
-      if (!hasStock) {
-        Alert.alert(
-          "Stock insuffisant",
-          `Désolé, il ne reste que ${item.variant?.stock || item.product.stock} unités disponibles pour ce produit.`
-        );
-        return;
-      }
-
-      const endpoint = increment
-        ? `/cart/${cart?.id}/items/${itemId}/increment`
-        : `/cart/${cart?.id}/items/${itemId}/decrement`;
-
-      console.log("Appel API avec l'endpoint:", endpoint);
-
-      // Mettre à jour le state localement avant l'appel API pour une UX plus réactive
-      setCart(prevCart => {
-        if (!prevCart) return null;
-
-        const updatedItems = prevCart.items.map(cartItem => {
-          if (cartItem.id === itemId) {
-            const updatedQuantity = increment ? cartItem.quantity + 1 : cartItem.quantity - 1;
-            return {
-              ...cartItem,
-              quantity: updatedQuantity
-            };
-          }
-          return cartItem;
-        });
-
-        // Recalculer les totaux
-        const subtotal = updatedItems.reduce((sum, item) =>
-          sum + (item.unit_price * item.quantity), 0);
-        const discount = prevCart.discount || 0;
-        const shipping_fee = prevCart.shipping_fee || 0;
-        const total = subtotal - discount + shipping_fee;
-
-        return {
-          ...prevCart,
-          items: updatedItems,
-          subtotal,
-          total
-        };
-      });
-
-      // Faire l'appel API en arrière-plan
-      const response = await api.patch(endpoint, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      console.log("Réponse de l'API:", response.data);
-
-      // En cas d'erreur de l'API, on peut revenir à l'état précédent
-      if (!response.data.success) {
-        await fetchCart(); // Recharger le panier seulement en cas d'erreur
-      }
-    } catch (error: any) {
-      console.error("Erreur détaillée lors de la mise à jour de la quantité:", {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
+      await updateQuantity(itemId, increment);
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour de la quantité:", error);
       Alert.alert("Erreur", "Impossible de mettre à jour la quantité");
-      await fetchCart(); // Recharger le panier en cas d'erreur
     } finally {
       setProcessing(false);
     }
@@ -335,55 +42,17 @@ export default function CartScreen() {
   const handleRemoveItem = async (itemId: string) => {
     try {
       setProcessing(true);
-      const token = await getToken();
-
-      if (!token) {
-        Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
-        router.push("/connexion");
-        return;
-      }
-
-      // Mettre à jour le state localement avant l'appel API
-      setCart(prevCart => {
-        if (!prevCart) return null;
-
-        const updatedItems = prevCart.items.filter(item => item.id !== itemId);
-
-        // Recalculer les totaux
-        const subtotal = updatedItems.reduce((sum, item) =>
-          sum + (item.unit_price * item.quantity), 0);
-        const discount = prevCart.discount || 0;
-        const shipping_fee = prevCart.shipping_fee || 0;
-        const total = subtotal - discount + shipping_fee;
-
-        return {
-          ...prevCart,
-          items: updatedItems,
-          subtotal,
-          total
-        };
-      });
-
-      // Faire l'appel API en arrière-plan
-      const response = await api.delete(`/cart/${cart?.id}/items/${itemId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      // En cas d'erreur de l'API, on recharge le panier pour synchroniser
-      if (!response.data?.success) {
-        await fetchCart();
-      }
-    } catch (error: any) {
+      await removeFromCart(itemId);
+    } catch (error) {
       console.error("Erreur lors de la suppression de l'article:", error);
       Alert.alert("Erreur", "Impossible de supprimer l'article");
-      await fetchCart(); // Recharger le panier en cas d'erreur
     } finally {
       setProcessing(false);
     }
   };
 
   const handleCheckout = () => {
-    if (!cart || cart.items.length === 0) {
+    if (!items || items.length === 0) {
       Alert.alert("Panier vide", "Votre panier est vide. Ajoutez des articles avant de procéder au paiement.");
       return;
     }
@@ -398,7 +67,7 @@ export default function CartScreen() {
     );
   }
 
-  if (!cart || cart.items.length === 0) {
+  if (!items || items.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyCart}>
@@ -423,11 +92,11 @@ export default function CartScreen() {
       </View>
 
       <ScrollView style={styles.cartList} showsVerticalScrollIndicator={false}>
-        {cart.items.map((item) => (
+        {items.map((item) => (
           <View key={item.id} style={styles.cartItem}>
             <Image
               source={{
-                uri: item.variant?.image || item.product.image || 'https://via.placeholder.com/80'
+                uri: item.product.image || 'https://via.placeholder.com/80'
               }}
               style={styles.productImage}
               onError={(e) => {
@@ -437,16 +106,18 @@ export default function CartScreen() {
             <View style={styles.productInfo}>
               <Text style={styles.productName}>{item.product.name}</Text>
               {item.variant && (
-                <Text style={styles.productVariant}>{item.variant.name}</Text>
+                <Text style={styles.variantName}>{item.variant.name}</Text>
               )}
               <Text style={styles.productPrice}>
-                {Number(item.unit_price || item.variant?.price || item.product.price || 0).toFixed(2)} €
+                {Number(item.unitPrice || item.variant?.price || item.product.price || 0).toFixed(2)} €
               </Text>
             </View>
+
             <View style={styles.rightContainer}>
               <TouchableOpacity
                 onPress={() => handleRemoveItem(item.id)}
                 style={styles.deleteButton}
+                disabled={processing}
               >
                 <Ionicons name="trash-outline" size={24} color="#FF6B6B" />
               </TouchableOpacity>
@@ -456,7 +127,7 @@ export default function CartScreen() {
                   style={styles.quantityButton}
                   disabled={processing}
                 >
-                  <Ionicons name="remove" size={24} color="white" />
+                  <Ionicons name="remove" size={24} color="#F59E0B" />
                 </TouchableOpacity>
                 <Text style={styles.quantityText}>
                   {item.quantity.toString().padStart(2, '0')}
@@ -466,7 +137,7 @@ export default function CartScreen() {
                   style={styles.quantityButton}
                   disabled={processing}
                 >
-                  <Ionicons name="add" size={24} color="white" />
+                  <Ionicons name="add" size={24} color="#F59E0B" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -479,24 +150,24 @@ export default function CartScreen() {
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Articles</Text>
           <Text style={styles.summaryValue}>
-            {cart.items.reduce((total, item) => total + item.quantity, 0)} articles
+            {items.reduce((total, item) => total + item.quantity, 0)} articles
           </Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Sous-total</Text>
-          <Text style={styles.summaryValue}>{Number(cart.subtotal || 0).toFixed(2)} €</Text>
+          <Text style={styles.summaryValue}>{totals.subtotal.toFixed(2)} €</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Réduction</Text>
-          <Text style={styles.summaryValue}>{Number(cart.discount || 0).toFixed(2)} €</Text>
+          <Text style={styles.summaryValue}>{totals.discount.toFixed(2)} €</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Frais de livraison</Text>
-          <Text style={styles.summaryValue}>{Number(cart.shipping_fee || 0).toFixed(2)} €</Text>
+          <Text style={styles.summaryValue}>{totals.shippingFee.toFixed(2)} €</Text>
         </View>
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>{Number(cart.total || 0).toFixed(2)} €</Text>
+          <Text style={styles.totalValue}>{totals.total.toFixed(2)} €</Text>
         </View>
       </View>
 
@@ -591,7 +262,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#000',
   },
-  productVariant: {
+  variantName: {
     fontSize: 14,
     color: '#666',
     marginTop: 4,
@@ -617,30 +288,25 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   quantityButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F59E0B',
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 8,
   },
   quantityText: {
     fontSize: 16,
     fontWeight: '600',
-    marginHorizontal: 12,
     color: '#000',
+    paddingHorizontal: 12,
   },
   orderSummary: {
+    backgroundColor: '#F5F5F5',
     padding: 16,
-    backgroundColor: '#FFF',
     borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    borderTopColor: '#E5E7EB',
   },
   summaryTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#000',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -648,40 +314,40 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   summaryLabel: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
   },
   summaryValue: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 14,
     color: '#000',
+    fontWeight: '500',
   },
   totalRow: {
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: '#E5E7EB',
   },
   totalLabel: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#000',
   },
   totalValue: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
+    color: '#F59E0B',
   },
   checkoutButton: {
     backgroundColor: '#F59E0B',
     margin: 16,
     padding: 16,
-    borderRadius: 30,
+    borderRadius: 12,
     alignItems: 'center',
   },
   checkoutButtonText: {
     color: '#FFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
 });

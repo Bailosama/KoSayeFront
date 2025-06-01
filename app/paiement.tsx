@@ -10,6 +10,7 @@ import {
   View
 } from "react-native";
 import { PaymentForm } from './components/PaymentForm';
+import { ShippingAddressDisplay } from './components/ShippingAddressDisplay';
 import { useCart } from "./contexts/CartContext";
 
 export default function PaymentScreen() {
@@ -28,7 +29,7 @@ export default function PaymentScreen() {
   const handlePaymentSuccess = async () => {
     console.log('Paiement réussi');
     try {
-      await clearCart(); // Vider le panier après un paiement réussi
+      await clearCart();
       router.replace('/commande-confirmee'); // Rediriger vers la page de confirmation
     } catch (error) {
       console.error('Erreur lors du vidage du panier:', error);
@@ -52,6 +53,8 @@ export default function PaymentScreen() {
           <Text style={styles.summaryTitle}>Montant à payer</Text>
           <Text style={styles.amount}>{total.toFixed(2)} €</Text>
         </View>
+
+        <ShippingAddressDisplay addressId={addressId} />
 
         <PaymentForm
           amount={total}
