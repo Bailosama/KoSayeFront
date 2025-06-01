@@ -293,17 +293,50 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 return;
             }
 
+            // Mise à jour optimiste
+            const updatedItems = items.map(cartItem =>
+                cartItem.id === itemId
+                    ? { ...cartItem, quantity: newQuantity }
+                    : cartItem
+            );
+            setItems(updatedItems);
+
+            // Calculer les totaux immédiatement
+            const subtotal = updatedItems.reduce((sum: number, item: CartItem) => {
+                const unitPrice = Number(item.unitPrice) ||
+                    Number(item.variant?.price) ||
+                    Number(item.product.price) ||
+                    0;
+                return sum + (unitPrice * item.quantity);
+            }, 0);
+
+            const discount = subtotal > 100 ? 10 : 0;
+            const shippingFee = subtotal > 200 ? 0 : 5;
+            const total = subtotal - discount + shippingFee;
+
+            setTotals({
+                subtotal,
+                discount,
+                shippingFee,
+                total
+            });
+
+            // Appel API en arrière-plan
             const response = await api.patch(
                 `/cart/${cartId}/items/${itemId}/${increment ? 'increment' : 'decrement'}`,
                 {},
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            if (response.data?.success) {
+            // Si l'API échoue, on recharge le panier pour synchroniser
+            if (!response.data?.success) {
+                console.log("CartContext - Échec de la mise à jour, rechargement du panier");
                 await fetchCart();
             }
         } catch (error: any) {
             console.error("CartContext - Erreur lors de la mise à jour de la quantité:", error);
+            // En cas d'erreur, on recharge le panier pour revenir à l'état correct
+            await fetchCart();
             throw error;
         }
     };

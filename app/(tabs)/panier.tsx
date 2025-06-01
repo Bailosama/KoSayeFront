@@ -33,7 +33,10 @@ export default function CartScreen() {
       await updateQuantity(itemId, increment);
     } catch (error) {
       console.error("Erreur lors de la mise à jour de la quantité:", error);
-      Alert.alert("Erreur", "Impossible de mettre à jour la quantité");
+      Alert.alert(
+        "Erreur",
+        "Impossible de mettre à jour la quantité. Le panier a été resynchronisé."
+      );
     } finally {
       setProcessing(false);
     }
@@ -45,7 +48,10 @@ export default function CartScreen() {
       await removeFromCart(itemId);
     } catch (error) {
       console.error("Erreur lors de la suppression de l'article:", error);
-      Alert.alert("Erreur", "Impossible de supprimer l'article");
+      Alert.alert(
+        "Erreur",
+        "Impossible de supprimer l'article. Le panier a été resynchronisé."
+      );
     } finally {
       setProcessing(false);
     }
