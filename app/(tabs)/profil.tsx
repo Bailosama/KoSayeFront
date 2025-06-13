@@ -1,23 +1,22 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  SafeAreaView,
-  ScrollView,
-  Modal,
-  Dimensions,
-  StatusBar,
-  Alert,
-  Platform,
+    Alert,
+    Dimensions,
+    Image,
+    Modal,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
-import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "../contexts/AuthContext";
-import * as ImagePicker from "expo-image-picker";
 import api from "../api/api";
+import { ProfileImageUpload } from "../components/ProfileImageUpload";
+import { useAuth } from "../contexts/AuthContext";
 import { getToken } from "../utils/auth";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -26,77 +25,40 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);
-  const [profileImage, setProfileImage] = useState(
-    user?.profilePicture || null
-  );
   const [imageError, setImageError] = useState(false);
 
-  const pickImage = async () => {
+  const handleImageSelected = async (imageFile: any) => {
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission refusée",
-          "Nous avons besoin de la permission d'accéder à votre galerie pour changer la photo de profil."
-        );
+      const token = await getToken();
+      if (!token) {
+        Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
+        router.push("/connexion");
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
+      const formData = new FormData();
+      formData.append('profilePicture', imageFile);
+
+      const response = await api.put("/user/profile", formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+          Accept: "application/json",
+        },
       });
 
-      if (!result.canceled) {
-        const token = await getToken();
-        if (!token) {
-          Alert.alert("Erreur", "Session expirée. Veuillez vous reconnecter.");
-          router.push("/connexion");
-          return;
-        }
-
-        // Créer un objet FormData pour l'envoi de l'image
-        const formData = new FormData();
-        formData.append("profilePicture", {
-          uri:
-            Platform.OS === "ios"
-              ? result.assets[0].uri.replace("file://", "")
-              : result.assets[0].uri,
-          type: "image/jpeg",
-          name: "profile-picture.jpg",
-        } as any);
-
-        // Envoyer l'image au serveur
-        const response = await api.put("/user/profile", formData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-            Accept: "application/json",
-          },
-        });
-
-        if (response.data.success) {
-          // Réinitialiser l'état d'erreur d'image
-          setImageError(false);
-          // Mettre à jour le contexte d'authentification avec la nouvelle photo
-          updateUser({ profilePicture: response.data.data.profilePicture });
-          Alert.alert("Succès", "Photo de profil mise à jour avec succès");
-        } else {
-          throw new Error(
-            response.data.message || "Erreur lors de la mise à jour de la photo"
-          );
-        }
+      if (response.data.success) {
+        setImageError(false);
+        updateUser({ profilePicture: response.data.data.profilePicture });
+        Alert.alert("Succès", "Photo de profil mise à jour avec succès");
+      } else {
+        throw new Error(response.data.message || "Erreur lors de la mise à jour de la photo");
       }
     } catch (error: any) {
       console.error("Erreur lors de la mise à jour de la photo:", error);
       Alert.alert(
         "Erreur",
-        error.response?.data?.message ||
-          "Une erreur est survenue lors de la mise à jour de la photo"
+        error.response?.data?.message || "Une erreur est survenue lors de la mise à jour de la photo"
       );
     }
   };
@@ -194,30 +156,14 @@ export default function ProfileScreen() {
       <ScrollView style={styles.scrollView}>
         {/* Photo de profil et informations */}
         <View style={styles.profileSection}>
-          <TouchableOpacity onPress={pickImage}>
-            {user.profilePicture && !imageError ? (
-              <Image
-                source={{ uri: user.profilePicture }}
-                style={styles.profileImage}
-                onError={(e) => {
-                  console.log(
-                    "Erreur de chargement de l'image:",
-                    e.nativeEvent.error
-                  );
-                  setImageError(true);
-                }}
-              />
-            ) : (
-              <View style={styles.profileImageFallback}>
-                <Text style={styles.profileImageFallbackText}>
-                  {user.firstname.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <Text
-            style={styles.name}
-          >{`${user.firstname} ${user.lastname}`}</Text>
+          <ProfileImageUpload
+            currentImage={user.profilePicture}
+            onImageSelected={handleImageSelected}
+            onError={(error) => Alert.alert("Erreur", error)}
+            size={120}
+            readOnly={true}
+          />
+          <Text style={styles.name}>{`${user.firstname} ${user.lastname}`}</Text>
           <Text style={styles.email}>{user.email}</Text>
         </View>
 
@@ -259,9 +205,9 @@ export default function ProfileScreen() {
           >
             <Ionicons name="close" size={28} color="#FFF" />
           </TouchableOpacity>
-          {profileImage && (
+          {user.profilePicture && (
             <Image
-              source={{ uri: profileImage }}
+              source={{ uri: user.profilePicture }}
               style={styles.fullScreenImage}
               resizeMode="contain"
             />
@@ -289,26 +235,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     marginBottom: 20,
-  },
-  profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    marginBottom: 16,
-  },
-  profileImageFallback: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    marginBottom: 16,
-    backgroundColor: "#F59E0B",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  profileImageFallbackText: {
-    fontSize: 48,
-    color: "#FFFFFF",
-    fontWeight: "bold",
   },
   name: {
     fontSize: 24,

@@ -1,24 +1,21 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
   SafeAreaView,
   ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
+  TouchableOpacity,
+  View
 } from "react-native";
-import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 import { useProfile } from "../contexts/ProfileContext";
-import * as ImagePicker from "expo-image-picker";
-import { useAuth } from "./contexts/AuthContext";
 import api from "./api/api";
+import { ProfileImageUpload } from "./components/ProfileImageUpload";
+import { useAuth } from "./contexts/AuthContext";
 import { getToken } from "./utils/auth";
 
 export default function DetailProfilScreen() {
@@ -33,33 +30,11 @@ export default function DetailProfilScreen() {
     phone: user?.phone || "",
     adress: user?.adress || "",
   });
-  const [selectedImage, setSelectedImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [selectedImage, setSelectedImage] = useState<any>(null);
 
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission refusée",
-        "Nous avons besoin de la permission d'accéder à votre galerie pour changer la photo de profil."
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setSelectedImage(result.assets[0]);
-      setProfileImage(result.assets[0].uri);
-    }
-  };
-
-  const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const handleImageSelected = (imageFile: any) => {
+    setSelectedImage(imageFile);
+    setProfileImage(imageFile.uri);
   };
 
   const handleSubmit = async () => {
@@ -82,21 +57,7 @@ export default function DetailProfilScreen() {
 
       // Add image if selected
       if (selectedImage) {
-        const imageUri = Platform.OS === 'ios' 
-          ? selectedImage.uri.replace('file://', '') 
-          : selectedImage.uri;
-
-        // Créer un vrai fichier à partir de l'URI
-        const response = await fetch(imageUri);
-        const blob = await response.blob();
-        
-        // Créer un fichier à partir du blob
-        const file = new File([blob], 'profile-picture.jpg', {
-          type: 'image/jpeg',
-          lastModified: new Date().getTime()
-        });
-        
-        formDataToSend.append('profilePicture', file);
+        formDataToSend.append('profile_picture', selectedImage);
       }
 
       const response = await api.put(
@@ -114,10 +75,12 @@ export default function DetailProfilScreen() {
       // Si nous avons une réponse, c'est un succès
       if (response.data) {
         // Construire l'URL complète de l'image
-        const baseUrl = 'http://192.168.1.144:3333';
+        const baseUrl = 'http://192.168.1.196:3333';
         const profilePictureUrl = response.data.data?.profilePicture 
-          ? `${baseUrl}${response.data.data.profilePicture}`
-          : null;
+          ? `${baseUrl}/uploads/${response.data.data.profilePicture}`
+          : user?.profilePicture || '';
+
+        console.log('URL de l\'image:', profilePictureUrl); // Pour déboguer
 
         // Mettre à jour le contexte d'authentification avec les nouvelles données
         const updatedUserData = {
@@ -127,6 +90,7 @@ export default function DetailProfilScreen() {
         };
         
         updateUser(updatedUserData);
+        setProfileImage(profilePictureUrl);
         
         Alert.alert("Succès", "Profil mis à jour avec succès");
         router.back();
@@ -140,6 +104,10 @@ export default function DetailProfilScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleChange = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   if (!user) {
@@ -167,20 +135,12 @@ export default function DetailProfilScreen() {
 
       <ScrollView style={styles.content}>
         <View style={styles.profileImageContainer}>
-          <TouchableOpacity onPress={pickImage}>
-            {profileImage ? (
-              <Image source={{ uri: profileImage }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.profileImageFallback}>
-                <Text style={styles.profileImageFallbackText}>
-                  {user.firstname.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-            <View style={styles.imageOverlay}>
-              <Ionicons name="camera" size={24} color="#FFF" />
-            </View>
-          </TouchableOpacity>
+          <ProfileImageUpload
+            currentImage={profileImage}
+            onImageSelected={handleImageSelected}
+            onError={(error) => Alert.alert("Erreur", error)}
+            size={120}
+          />
         </View>
 
         <View style={styles.form}>
@@ -299,35 +259,6 @@ const styles = StyleSheet.create({
   profileImageContainer: {
     alignItems: "center",
     marginBottom: 24,
-  },
-  profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  profileImageFallback: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#F59E0B",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  profileImageFallbackText: {
-    fontSize: 48,
-    color: "#FFFFFF",
-    fontWeight: "bold",
-  },
-  imageOverlay: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
   },
   form: {
     backgroundColor: "#F5F5F5",

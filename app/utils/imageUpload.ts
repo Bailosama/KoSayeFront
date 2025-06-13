@@ -1,5 +1,3 @@
-import { AxiosError } from 'axios';
-import { useState } from 'react';
 import { Platform } from 'react-native';
 
 interface ImageFile {
@@ -33,8 +31,6 @@ type ValidExtension = 'jpg' | 'jpeg' | 'png' | 'gif';
 type MimeTypes = { [K in ValidExtension]: string };
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB en octets
-
-const [hidingOrder, setHidingOrder] = useState<number | null>(null);
 
 const getImageFileInfo = (uri: string) => {
     // Récupérer l'extension depuis l'URI ou utiliser jpg par défaut
@@ -91,100 +87,47 @@ export const updateProfileWithImage = async (
             // Créer un objet fichier selon les règles de validation Vine
             const fileData = {
                 uri: Platform.OS === 'ios' ? imageFile.uri.replace('file://', '') : imageFile.uri,
-                type: mimeType,                    // Validé par vine.file()
-                name: `profile-picture.${extension}` // Extension validée par vine.file({ extnames })
+                type: mimeType,
+                name: `profile-picture.${extension}`
             };
 
             formData.append('profilePicture', fileData as any);
-
-            // Log pour vérifier la conformité avec le validateur
-            console.log('📤 Image préparée pour validation Vine:', {
-                name: fileData.name,     // Doit avoir une extension autorisée
-                type: fileData.type,     // Type MIME correspondant
-                size: imageFile.size ? `${Math.round(imageFile.size / 1024 / 1024)}MB` : 'Inconnu',
-                maxSize: '5MB'
-            });
         }
 
-        // Envoi à l'API avec le même schéma que le validateur
-        const response = await api.put('/users/profile', formData, {
+        const response = await api.put('/user/profile', formData, {
             headers: {
-                'Accept': 'application/json',
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'multipart/form-data',
-                ...(token && { Authorization: `Bearer ${token}` }),
+                Accept: 'application/json',
             },
-            transformRequest: () => formData,
         });
 
-        // Log de la réponse du serveur pour vérifier l'URL de l'image
-        console.log('📥 Réponse du serveur:', {
-            user: response.data?.user,
-            profilePicture: response.data?.user?.profilePicture || response.data?.profilePicture
-        });
-
-        return {
-            status: 200,
-            message: 'Profil mis à jour avec succès',
-            data: {
-                user: response.data?.user,
-                profilePicture: response.data?.user?.profilePicture || response.data?.profilePicture
-            }
-        };
-    } catch (error) {
-        const axiosError = error as AxiosError<any>;
-        console.error('❌ Erreur détaillée:', {
-            response: axiosError.response?.data,
-            status: axiosError.response?.status
-        });
-
-        if (axiosError.response) {
+        // Vérifier si la réponse contient un message de succès
+        if (response.data && response.data.message) {
             return {
-                status: axiosError.response.status,
-                message: axiosError.response.data.message || 'Erreur lors de la mise à jour du profil',
-                data: axiosError.response.data
+                status: 200,
+                message: response.data.message,
+                data: response.data.data
             };
         }
+
         return {
-            status: 500,
-            message: 'Erreur inattendue lors de la mise à jour du profil'
+            status: response.status,
+            message: 'Profil mis à jour avec succès',
+            data: response.data
+        };
+
+    } catch (error: any) {
+        console.error('Erreur lors de la mise à jour du profil:', error);
+        return {
+            status: error.response?.status || 500,
+            message: error.response?.data?.message || 'Une erreur est survenue lors de la mise à jour du profil'
         };
     }
 };
 
-const handleHideOrder = async (orderId: number) => {
-    try {
-        setHidingOrder(orderId);
-        Alert.alert(
-            "Masquer la commande",
-            "Êtes-vous sûr de vouloir masquer cette commande de l'historique ?",
-            [
-                {
-                    text: "Annuler",
-                    style: "cancel"
-                },
-                {
-                    text: "Masquer",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            const token = await getToken();
-                            await api.patch(`/orders/${orderId}/hide`, null, {
-                                headers: { Authorization: `Bearer ${token}` }
-                            });
-                            setOrders(prevOrders => prevOrders.filter(order => order.id !== orderId));
-                            Alert.alert("Succès", "La commande a été masquée de l'historique");
-                        } catch (error) {
-                            console.error("Erreur lors du masquage:", error);
-                            Alert.alert("Erreur", "Impossible de masquer la commande. Veuillez réessayer.");
-                        }
-                    }
-                }
-            ]
-        );
-    } catch (error) {
-        console.error("Erreur lors du masquage:", error);
-        Alert.alert("Erreur", "Une erreur est survenue. Veuillez réessayer.");
-    } finally {
-        setHidingOrder(null);
-    }
+// Export par défaut pour satisfaire les exigences de la route
+export default {
+    updateProfileWithImage,
+    getImageFileInfo
 };

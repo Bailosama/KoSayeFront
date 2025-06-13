@@ -4,10 +4,10 @@ import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Image,
     Platform,
     StyleSheet,
-    Text,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -16,12 +16,16 @@ interface ProfileImageUploadProps {
     currentImage?: string | null;
     onImageSelected: (imageFile: any) => void;
     onError?: (error: string) => void;
+    size?: number;
+    readOnly?: boolean;
 }
 
 export const ProfileImageUpload: React.FC<ProfileImageUploadProps> = ({
     currentImage,
     onImageSelected,
-    onError
+    onError,
+    size = 120,
+    readOnly = false
 }) => {
     const [loading, setLoading] = useState(false);
 
@@ -29,7 +33,10 @@ export const ProfileImageUpload: React.FC<ProfileImageUploadProps> = ({
         if (Platform.OS !== 'web') {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
-                onError?.('Permission d\'accès à la galerie refusée');
+                Alert.alert(
+                    "Permission refusée",
+                    "Nous avons besoin de la permission d'accéder à votre galerie pour changer la photo de profil."
+                );
                 return false;
             }
         }
@@ -37,6 +44,8 @@ export const ProfileImageUpload: React.FC<ProfileImageUploadProps> = ({
     };
 
     const handleImagePick = async () => {
+        if (readOnly) return;
+        
         try {
             setLoading(true);
 
@@ -60,9 +69,11 @@ export const ProfileImageUpload: React.FC<ProfileImageUploadProps> = ({
                     { compress: 0.7, format: SaveFormat.JPEG }
                 );
 
-                // Créer un objet File pour l'API
+                // Créer un objet pour l'API
                 const imageFile = {
-                    uri: manipulatedImage.uri,
+                    uri: Platform.OS === 'ios' 
+                        ? manipulatedImage.uri.replace('file://', '') 
+                        : manipulatedImage.uri,
                     type: 'image/jpeg',
                     name: 'profile-picture.jpg',
                 };
@@ -80,31 +91,29 @@ export const ProfileImageUpload: React.FC<ProfileImageUploadProps> = ({
     return (
         <View style={styles.container}>
             <TouchableOpacity
-                style={styles.imageContainer}
+                style={[styles.imageContainer, { width: size, height: size }]}
                 onPress={handleImagePick}
-                disabled={loading}
+                disabled={loading || readOnly}
             >
                 {loading ? (
                     <ActivityIndicator size="large" color="#F59E0B" />
                 ) : currentImage ? (
                     <Image
                         source={{ uri: currentImage }}
-                        style={styles.image}
+                        style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
                     />
                 ) : (
-                    <View style={styles.placeholderContainer}>
-                        <Ionicons name="person-circle-outline" size={60} color="#666" />
+                    <View style={[styles.placeholderContainer, { width: size, height: size, borderRadius: size / 2 }]}>
+                        <Ionicons name="person-circle-outline" size={size * 0.5} color="#666" />
                     </View>
                 )}
 
-                <View style={styles.editBadge}>
-                    <Ionicons name="camera" size={16} color="#FFF" />
-                </View>
+                {!readOnly && (
+                    <View style={styles.editBadge}>
+                        <Ionicons name="camera" size={16} color="#FFF" />
+                    </View>
+                )}
             </TouchableOpacity>
-
-            <Text style={styles.helpText}>
-                Appuyez pour modifier votre photo de profil
-            </Text>
         </View>
     );
 };
@@ -112,46 +121,31 @@ export const ProfileImageUpload: React.FC<ProfileImageUploadProps> = ({
 const styles = StyleSheet.create({
     container: {
         alignItems: 'center',
-        marginBottom: 20,
+        justifyContent: 'center',
     },
     imageContainer: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        backgroundColor: '#F5F5F5',
-        justifyContent: 'center',
-        alignItems: 'center',
         position: 'relative',
+        borderRadius: 60,
+        overflow: 'hidden',
     },
     image: {
         width: '100%',
         height: '100%',
-        borderRadius: 60,
     },
     placeholderContainer: {
-        width: '100%',
-        height: '100%',
+        backgroundColor: '#F5F5F5',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#F5F5F5',
-        borderRadius: 60,
     },
     editBadge: {
         position: 'absolute',
-        bottom: 0,
         right: 0,
-        backgroundColor: '#F59E0B',
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#FFF',
-    },
-    helpText: {
-        marginTop: 8,
-        fontSize: 14,
-        color: '#666',
     },
 }); 
