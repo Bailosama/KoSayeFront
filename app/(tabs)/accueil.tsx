@@ -19,7 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FILE_URL } from "../../config";
 import api from "../api/api";
 import { useAuth } from "../contexts/AuthContext";
-import { getToken } from '../utils/auth';
+import { getToken, removeToken } from '../utils/auth';
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width * 0.4;
@@ -97,7 +97,7 @@ const Header = ({ userName }: { userName: string }) => {
       const token = await getToken();
       if (!token) return;
 
-      console.log('Fetching unread notifications...');
+      console.log('Fetching des notifications non lue...');
       const response = await api.get('/notifications/unread/count', {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -107,7 +107,7 @@ const Header = ({ userName }: { userName: string }) => {
       console.log('Notifications response:', response.data);
 
       if (response.data && typeof response.data.count === 'number') {
-        console.log('Setting unread notifications count:', response.data.count);
+        console.log('parametre unread notifications count:', response.data.count);
         setUnreadNotifications(response.data.count);
       } else {
         console.log('Invalid response format:', response.data);
@@ -235,12 +235,14 @@ const ProductCard = ({
   isFavorite: boolean;
   toggleFavorite: (productId: string) => void;
 }) => {
+  const [imageError, setImageError] = useState(false);
+
   // Construire l'URL de l'image
-  const imageUrl = item.variants?.[0]?.image ?
-    `${FILE_URL}/${item.variants[0].image}` :
-    item.image ?
-      `${FILE_URL}/${item.image}` :
-      `https://picsum.photos/seed/${item.id}/200/300`;
+  const imageUrl = imageError || !item.image
+    ? `https://picsum.photos/seed/${item.id}/200/300`
+    : item.image.startsWith('http')
+      ? item.image
+      : `${FILE_URL}/${item.image}`;
 
   return (
     <TouchableOpacity
@@ -259,6 +261,7 @@ const ProductCard = ({
         source={{ uri: imageUrl }}
         style={styles.cardImage}
         resizeMode="cover"
+        onError={() => setImageError(true)}
       />
       <TouchableOpacity
         style={styles.heartIconContainer}
@@ -271,7 +274,7 @@ const ProductCard = ({
         />
       </TouchableOpacity>
       <Text style={styles.cardName}>{item.name}</Text>
-      <Text style={styles.cardPrice}>${parseFloat(item.price.toString()).toFixed(2)}</Text>
+      <Text style={styles.cardPrice}>{parseFloat(item.price.toString()).toLocaleString('fr-FR')} GNF</Text>
     </TouchableOpacity>
   );
 };
@@ -353,7 +356,12 @@ export default function AccueilScreen() {
     } catch (error: any) {
       console.error('=== ERREUR RÉCUPÉRATION DONNÉES UTILISATEUR ===');
       console.error('Message:', error.message);
-      console.error('Réponse API:', error.response?.data);
+      // On ne redirige plus vers la connexion en cas d'erreur
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        // On nettoie juste le token
+        await removeToken();
+        api.defaults.headers.common['Authorization'] = '';
+      }
     }
   };
 
@@ -367,19 +375,16 @@ export default function AccueilScreen() {
       setFavorites(wishlistItems.map((item: WishlistItem) => item.product_id));
     } catch (error: any) {
       console.error("Erreur récupération favoris :", error);
-      console.log("Détails erreur:", JSON.stringify(error.response?.data, null, 2));
       if (error.response?.status === 403 || error.response?.status === 401) {
-        Alert.alert(
-          "Erreur d'authentification",
-          "Session invalide. Veuillez vous reconnecter.",
-          [{ text: "OK", onPress: () => router.push("/connexion") }]
-        );
+        // On nettoie juste le token sans redirection
         if (Platform.OS !== "web") {
           await SecureStore.deleteItemAsync("userToken");
         } else {
           localStorage.removeItem("userToken");
         }
+        api.defaults.headers.common['Authorization'] = '';
       }
+      setFavorites([]);
     }
   };
 
@@ -468,15 +473,20 @@ export default function AccueilScreen() {
         const token = await getToken();
         console.log("Token utilisé:", token);
 
+        // Si on a un token, on récupère les données de l'utilisateur
         if (token) {
-          await fetchUserData(token);
-          await fetchFavorites(token);
-          await fetchOrders();
+          try {
+            await fetchUserData(token);
+            await fetchFavorites(token);
+            await fetchOrders();
+          } catch (error) {
+            console.error("Erreur récupération données utilisateur:", error);
+          }
         } else {
-          console.log("Aucun token trouvé");
-          router.replace("/connexion");
+          console.log("Pas de token, mode visiteur");
         }
 
+        // Récupération des données publiques (toujours exécutée)
         try {
           const categoriesResponse = await api.get("/categories");
           console.log("Réponse catégories :", JSON.stringify(categoriesResponse.data, null, 2));
@@ -484,34 +494,30 @@ export default function AccueilScreen() {
           setCategories(fetchedCategories.length > 0 ? fetchedCategories : fallbackCategories);
         } catch (error: any) {
           console.error("Erreur récupération catégories :", error);
-          console.log("Détails erreur:", JSON.stringify(error.response?.data, null, 2));
           setCategories(fallbackCategories);
         }
 
         try {
-          const featuredResponse = await api.get("/products?page=1&limit=5");
+          const featuredResponse = await api.get("/products?page=1&limit=10");
           console.log("Réponse produits en vedette :", JSON.stringify(featuredResponse.data, null, 2));
           const fetchedFeatured = featuredResponse.data.data?.data || [];
           setFeaturedProducts(fetchedFeatured.length > 0 ? fetchedFeatured : fallbackProducts);
         } catch (error: any) {
           console.error("Erreur récupération produits en vedette :", error);
-          console.log("Détails erreur:", JSON.stringify(error.response?.data, null, 2));
           setFeaturedProducts(fallbackProducts);
         }
 
         try {
-          const popularResponse = await api.get("/products?page=2&limit=5");
+          const popularResponse = await api.get("/products?page=2&limit=10");
           console.log("Réponse produits populaires :", JSON.stringify(popularResponse.data, null, 2));
           const fetchedPopular = popularResponse.data.data?.data || [];
           setPopularProducts(fetchedPopular.length > 0 ? fetchedPopular : fallbackProducts);
         } catch (error: any) {
           console.error("Erreur récupération produits populaires :", error);
-          console.log("Détails erreur:", JSON.stringify(error.response?.data, null, 2));
           setPopularProducts(fallbackProducts);
         }
       } catch (error: any) {
         console.error("Erreur globale :", error);
-        console.log("Détails erreur:", JSON.stringify(error.response?.data, null, 2));
         setCategories(fallbackCategories);
         setFeaturedProducts(fallbackProducts);
         setPopularProducts(fallbackProducts);
@@ -534,7 +540,11 @@ export default function AccueilScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <Header userName={user ? `${user.firstname} ${user.lastname}` : "Bienvenue !"} />
+        <View style={styles.header}>
+          <Text style={styles.welcomeText}>Bienvenue sur KO SAYE</Text>
+          <Text style={styles.subtitle}>Découvrez nos produits</Text>
+        </View>
+        {user && <Header userName={`${user.firstname} ${user.lastname}`} />}
         <CategoryList categories={categories} />
         <Banner />
         <ProductSection
@@ -691,6 +701,7 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     width: CARD_WIDTH,
+    height: CARD_WIDTH * 1.5, // Ajustez cette valeur selon vos besoins (par exemple, 1.5x la largeur)
     marginRight: 15,
     backgroundColor: "#f9f9f9",
     borderRadius: 10,
@@ -700,7 +711,7 @@ const styles = StyleSheet.create({
   },
   cardImage: {
     width: "100%",
-    height: CARD_WIDTH * 0.8,
+    height: CARD_WIDTH * 0.8, // Hauteur fixe pour l'image
     backgroundColor: "#e0e0e0",
   },
   heartIconContainer: {
@@ -736,5 +747,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  header: {
+    padding: 20,
+  },
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#000",
+    marginBottom: 10,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#666",
   },
 });

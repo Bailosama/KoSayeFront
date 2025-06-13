@@ -34,6 +34,14 @@ interface Product {
     id: number;
     name: string;
   };
+  discounts?: {
+    id: number;
+    type: 'percentage' | 'fixed';
+    value: number;
+    startDate?: string;
+    endDate?: string;
+  }[];
+  discountedPrice?: number;
   propertyValues?: {
     id: number;
     property_id: number;
@@ -50,6 +58,14 @@ interface Product {
     price: number;
     stock: number;
     image?: string;
+    discounts?: {
+      id: number;
+      type: 'percentage' | 'fixed';
+      value: number;
+      startDate?: string;
+      endDate?: string;
+    }[];
+    discountedPrice?: number;
   }[];
   properties?: {
     id: number;
@@ -64,6 +80,14 @@ interface Variant {
   price: number;
   stock: number;
   image?: string;
+  discounts?: {
+    id: number;
+    type: 'percentage' | 'fixed';
+    value: number;
+    startDate?: string;
+    endDate?: string;
+  }[];
+  discountedPrice?: number;
 }
 
 interface Review {
@@ -89,6 +113,100 @@ const { width } = Dimensions.get("window");
 const NUM_COLUMNS = 2;
 const CARD_MARGIN = 10;
 const CARD_WIDTH = (width - CARD_MARGIN * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
+
+const ProductImage = ({
+  product,
+  onToggleFavorite,
+  isFavorite
+}: {
+  product: Product;
+  onToggleFavorite: () => void;
+  isFavorite: boolean;
+}) => {
+  const [imageError, setImageError] = useState(false);
+
+  const imageUrl = imageError || !product.image
+    ? `https://picsum.photos/seed/${product.id}/200/300`
+    : product.image.startsWith('http')
+      ? product.image
+      : `${FILE_URL}/${product.image}`;
+
+  return (
+    <View style={styles.imageContainer}>
+      <Image
+        source={{ uri: imageUrl }}
+        style={styles.productImage}
+        resizeMode="cover"
+        onError={() => setImageError(true)}
+      />
+      <TouchableOpacity
+        style={styles.favoriteButton}
+        onPress={onToggleFavorite}
+      >
+        <Ionicons
+          name={isFavorite ? "heart" : "heart-outline"}
+          size={28}
+          color={isFavorite ? "#FF3B30" : "#000"}
+        />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const ProductVariant = ({
+  variant,
+  isSelected,
+  onSelect
+}: {
+  variant: Variant;
+  isSelected: boolean;
+  onSelect: () => void;
+}) => {
+  const [imageError, setImageError] = useState(false);
+
+  const imageUrl = imageError || !variant.image
+    ? `https://picsum.photos/seed/${variant.id}/200/300`
+    : variant.image.startsWith('http')
+      ? variant.image
+      : `${FILE_URL}/${variant.image}`;
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.variantCard,
+        isSelected && styles.selectedVariant,
+        variant.stock === 0 && styles.outOfStockVariant
+      ]}
+      onPress={() => {
+        if (variant.stock > 0) {
+          onSelect();
+        } else {
+          Alert.alert('Stock épuisé', 'Cette variante n\'est plus disponible en stock.');
+        }
+      }}
+    >
+      {variant.image && (
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.variantImage}
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+      )}
+      <Text style={[
+        styles.variantName,
+        variant.stock === 0 && styles.outOfStockText
+      ]}>{variant.name}</Text>
+      <Text style={styles.variantPrice}>{variant.price.toLocaleString('fr-FR')} GNF</Text>
+      <Text style={[
+        styles.variantStock,
+        variant.stock === 0 && styles.outOfStockText
+      ]}>
+        {variant.stock > 0 ? `En stock: ${variant.stock}` : 'Rupture de stock'}
+      </Text>
+    </TouchableOpacity>
+  );
+};
 
 const ProductDetail = () => {
   const params = useLocalSearchParams();
@@ -196,32 +314,62 @@ const ProductDetail = () => {
     }
   };
 
+  const calculateDiscountedPrice = (price: number, discounts?: Product['discounts']) => {
+    if (!discounts || discounts.length === 0) return undefined;
+
+    const now = new Date();
+    const validDiscount = discounts.find(discount => {
+      const startDate = discount.startDate ? new Date(discount.startDate) : null;
+      const endDate = discount.endDate ? new Date(discount.endDate) : null;
+
+      if (startDate && startDate > now) return false;
+      if (endDate && endDate < now) return false;
+
+      return true;
+    });
+
+    if (!validDiscount) return undefined;
+
+    if (validDiscount.type === 'percentage') {
+      return price * (1 - validDiscount.value / 100);
+    } else {
+      return Math.max(0, price - validDiscount.value);
+    }
+  };
+
   const fetchProduct = async () => {
     if (!productId) {
-      setError("ID du produit non spécifié");
+      setError("ID du produit manquant");
       setLoading(false);
       return;
     }
 
     try {
-      setLoading(true);
-      setError(null);
-      console.log("Fetching product with ID:", productId);
-      const response = await api.get(`/products/${productId}`);
-      console.log("Réponse API:", response.data);
+      const response = await api.get(`/products/${productId}?include=discounts`);
+      const productData = response.data.data;
 
-      if (response.data && response.data.data) {
-        setProduct(response.data.data);
-        const token = await getToken();
-        if (token) {
-          await fetchFavorites(token);
-        }
-      } else {
-        setError("Produit non trouvé");
+      // Calculer les prix avec réduction
+      const discountedPrice = calculateDiscountedPrice(productData.price, productData.discounts);
+
+      // Calculer les prix avec réduction pour les variantes
+      const variantsWithDiscounts = productData.variants?.map((variant: Variant) => ({
+        ...variant,
+        discountedPrice: calculateDiscountedPrice(variant.price, variant.discounts)
+      }));
+
+      setProduct({
+        ...productData,
+        discountedPrice,
+        variants: variantsWithDiscounts
+      });
+
+      const token = await getToken();
+      if (token) {
+        await fetchFavorites(token);
       }
     } catch (error) {
       console.error("Erreur lors de la récupération du produit:", error);
-      setError("Erreur lors de la récupération du produit");
+      setError("Impossible de charger le produit");
     } finally {
       setLoading(false);
     }
@@ -596,31 +744,35 @@ const ProductDetail = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView>
-        <View style={styles.imageContainer}>
-          <Image
-            source={{
-              uri: product.image ?
-                FILE_URL + '/' + product?.image :
-                `https://picsum.photos/seed/${product.id}/200/300`
-            }}
-            style={styles.productImage}
-            resizeMode="cover"
-          />
-          <TouchableOpacity
-            style={styles.favoriteButton}
-            onPress={toggleFavorite}
-          >
-            <Ionicons
-              name={isFavorite ? "heart" : "heart-outline"}
-              size={28}
-              color={isFavorite ? "#FF3B30" : "#000"}
-            />
-          </TouchableOpacity>
-        </View>
+        <ProductImage
+          product={product}
+          onToggleFavorite={toggleFavorite}
+          isFavorite={isFavorite}
+        />
 
         <View style={styles.infoContainer}>
           <Text style={styles.productName}>{product?.name}</Text>
-          <Text style={styles.productPrice}>{product?.price} €</Text>
+          <View style={styles.priceContainer}>
+            {product.discountedPrice ? (
+              <>
+                <Text style={styles.originalPrice}>
+                  {product.price.toLocaleString('fr-FR')} GNF
+                </Text>
+                <Text style={styles.discountedPrice}>
+                  {Math.round(product.discountedPrice).toLocaleString('fr-FR')} GNF
+                </Text>
+                <View style={styles.discountBadge}>
+                  <Text style={styles.discountText}>
+                    -{Math.round(((product.price - product.discountedPrice) / product.price) * 100)}%
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.price}>
+                {product.price.toLocaleString('fr-FR')} GNF
+              </Text>
+            )}
+          </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Description</Text>
@@ -644,33 +796,12 @@ const ProductDetail = () => {
               <Text style={styles.sectionTitle}>Variantes disponibles</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {product.variants.map((variant, index) => (
-                  <TouchableOpacity
+                  <ProductVariant
                     key={index}
-                    style={[
-                      styles.variantCard,
-                      selectedVariant?.id === variant.id && styles.selectedVariant,
-                      variant.stock === 0 && styles.outOfStockVariant
-                    ]}
-                    onPress={() => {
-                      if (variant.stock > 0) {
-                        setSelectedVariant(variant);
-                      } else {
-                        Alert.alert('Stock épuisé', 'Cette variante n\'est plus disponible en stock.');
-                      }
-                    }}
-                  >
-                    <Text style={[
-                      styles.variantName,
-                      variant.stock === 0 && styles.outOfStockText
-                    ]}>{variant.name}</Text>
-                    <Text style={styles.variantPrice}>{variant.price} €</Text>
-                    <Text style={[
-                      styles.variantStock,
-                      variant.stock === 0 && styles.outOfStockText
-                    ]}>
-                      {variant.stock > 0 ? `En stock: ${variant.stock}` : 'Rupture de stock'}
-                    </Text>
-                  </TouchableOpacity>
+                    variant={variant}
+                    isSelected={selectedVariant?.id === variant.id}
+                    onSelect={() => setSelectedVariant(variant)}
+                  />
                 ))}
               </ScrollView>
             </View>
@@ -771,11 +902,38 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 8,
   },
-  productPrice: {
-    fontSize: 22,
-    color: '#F59E0B',
-    fontWeight: '600',
-    marginBottom: 16,
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  price: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  originalPrice: {
+    fontSize: 18,
+    color: '#6B7280',
+    textDecorationLine: 'line-through',
+    marginRight: 10,
+  },
+  discountedPrice: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#EF4444',
+    marginRight: 10,
+  },
+  discountBadge: {
+    backgroundColor: '#FFE4E4',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  discountText: {
+    color: '#EF4444',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   section: {
     marginBottom: 24,
@@ -917,6 +1075,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '500',
+  },
+  variantImage: {
+    width: '100%',
+    height: 100,
+    borderRadius: 8,
+    marginBottom: 8,
   },
 });
 

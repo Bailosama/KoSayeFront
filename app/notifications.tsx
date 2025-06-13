@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  SafeAreaView,
-  ActivityIndicator,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import api from './api/api';
 import { getToken } from './utils/auth';
 
@@ -66,11 +66,11 @@ export default function NotificationsScreen() {
       });
 
       console.log('Notifications response:', response.data);
-      
+
       if (response.data && response.data.data) {
         const newNotifications = response.data.data.data || [];
         setHasMore(newNotifications.length === 10);
-        
+
         if (append) {
           setNotifications(prev => [...prev, ...newNotifications]);
         } else {
@@ -148,7 +148,7 @@ export default function NotificationsScreen() {
 
   const handleNotificationPress = (notification: Notification) => {
     markAsRead(notification.id);
-    
+
     // Navigation basée sur le type de notification
     if (notification.type === 'order_status' && notification.data.orderId) {
       router.push({
@@ -186,10 +186,10 @@ export default function NotificationsScreen() {
       onPress={() => handleNotificationPress(item)}
     >
       <View style={styles.notificationIcon}>
-        <Ionicons 
-          name={getNotificationIcon(item.type)} 
-          size={24} 
-          color={item.read ? '#666' : '#F59E0B'} 
+        <Ionicons
+          name={getNotificationIcon(item.type)}
+          size={24}
+          color={item.read ? '#666' : '#F59E0B'}
         />
       </View>
       <View style={styles.notificationContent}>
@@ -273,7 +273,7 @@ export default function NotificationsScreen() {
           refreshing={loading && page === 1}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
-          ListFooterComponent={() => 
+          ListFooterComponent={() =>
             loading && page > 1 ? (
               <ActivityIndicator size="small" color="#F59E0B" style={styles.footerLoader} />
             ) : null

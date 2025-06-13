@@ -1,13 +1,11 @@
 import { FILE_URL } from "@/config";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import debounce from 'lodash/debounce';
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Modal,
   RefreshControl,
   ScrollView,
@@ -15,16 +13,17 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ProductCard } from "../components/ui/ProductCard";
 import api from "./api/api";
-import { getToken, removeToken } from "./utils/auth";
 
 interface Product {
   id: string;
   name: string;
   price: number;
+  discountedPrice?: number;
   image?: string;
   description?: string;
   brand?: string;
@@ -35,6 +34,9 @@ interface Product {
     id: number;
     name: string;
   };
+  inStock: boolean;
+  stock: number;
+  discounts?: Discount[];
 }
 
 interface Variant {
@@ -59,6 +61,14 @@ interface FilterState {
   stockStatus: string | null;
 }
 
+interface Discount {
+  id: number;
+  type: 'percentage' | 'fixed';
+  value: number;
+  startDate?: string;
+  endDate?: string;
+}
+
 const { width } = Dimensions.get("window");
 const NUM_COLUMNS = 2;
 const CARD_MARGIN = 10;
@@ -66,17 +76,12 @@ const CARD_WIDTH = (width - CARD_MARGIN * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
 
 export default function ProductsScreen() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"price-asc" | "price-desc" | "name">("name");
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [properties, setProperties] = useState<Property[]>([]);
   const [filters, setFilters] = useState<FilterState>({
     categoryId: null,
     minPrice: '',
@@ -87,278 +92,154 @@ export default function ProductsScreen() {
   const [priceModalVisible, setPriceModalVisible] = useState(false);
   const [tempMinPrice, setTempMinPrice] = useState('');
   const [tempMaxPrice, setTempMaxPrice] = useState('');
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
-  const fetchProducts = async (pageNum: number = 1, shouldRefresh: boolean = false) => {
-    try {
-      if (shouldRefresh) {
-        setLoading(true);
-      } else {
-        setLoadingMore(true);
-      }
+  // Debounced search function
+  const debouncedSearch = useCallback(
+    debounce((text: string) => {
+      setFilters(prev => ({ ...prev, search: text }));
+      fetchProducts(true);
+    }, 500),
+    []
+  );
 
-      const params = new URLSearchParams({
-        page: pageNum.toString(),
-        limit: '10',
-        ...(filters.categoryId && { category_id: filters.categoryId }),
-        ...(filters.minPrice && { min_price: filters.minPrice }),
-        ...(filters.maxPrice && { max_price: filters.maxPrice }),
-        ...(filters.search && { search: filters.search }),
-        ...(filters.stockStatus && { stock_status: filters.stockStatus })
-      });
-
-      const response = await api.get(`/products?${params}`);
-      const newProducts = response.data.data.data || [];
-      
-      if (shouldRefresh) {
-        setProducts(newProducts);
-      } else {
-        setProducts(prev => [...prev, ...newProducts]);
-      }
-
-      setHasMore(newProducts.length === 10);
-      setPage(pageNum);
-    } catch (error) {
-      console.error("Erreur lors de la récupération des produits:", error);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
-    }
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    setIsSearching(true);
+    debouncedSearch(text);
   };
 
-  const handleFilterChange = (newFilters: Partial<FilterState>) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
-    setPage(1);
-    setProducts([]);
-    fetchProducts(1, true);
-  };
-
-  useEffect(() => {
-    fetchProducts(1, true);
-  }, [selectedCategory, searchQuery]);
-
-  useEffect(() => {
-    let filtered = [...products];
-
-    // Filtrage par recherche
-    if (searchQuery) {
-      filtered = filtered.filter(product =>
-        product.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    // Filtrage par catégorie
-    if (selectedCategory) {
-      filtered = filtered.filter(product =>
-        product.category?.name === selectedCategory
-      );
-    }
-
-    // Tri des produits
-    filtered.sort((a, b) => {
+  // Fonction de tri séparée
+  const sortProducts = useCallback((productsToSort: Product[]) => {
+    return [...productsToSort].sort((a, b) => {
       switch (sortBy) {
         case "price-asc":
-          return a.price - b.price;
+          return (a.discountedPrice || a.price) - (b.discountedPrice || b.price);
         case "price-desc":
-          return b.price - a.price;
+          return (b.discountedPrice || b.price) - (a.discountedPrice || a.price);
         case "name":
           return a.name.localeCompare(b.name);
         default:
           return 0;
       }
     });
+  }, [sortBy]);
 
-    setFilteredProducts(filtered);
-  }, [products, searchQuery, selectedCategory, sortBy]);
+  // Appliquer le tri quand sortBy change
+  useEffect(() => {
+    if (products.length > 0) {
+      const sortedProducts = sortProducts(products);
+      setProducts(sortedProducts);
+    }
+  }, [sortBy, sortProducts]);
+
+  const fetchProducts = async (shouldRefresh: boolean = false) => {
+    try {
+      setLoading(true);
+      setSearchError(null);
+      let allProducts: Product[] = [];
+      let currentPage = 1;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
+        const params = new URLSearchParams({
+          include: 'discounts,stock',
+          limit: '15',
+          page: currentPage.toString(),
+          ...(filters.categoryId && { category_id: filters.categoryId }),
+          ...(filters.minPrice && { min_price: filters.minPrice }),
+          ...(filters.maxPrice && { max_price: filters.maxPrice }),
+          ...(filters.search && { search: filters.search }),
+          ...(filters.stockStatus && { stock_status: filters.stockStatus })
+        });
+
+        const response = await api.get(`/products?${params}`);
+
+        const pageData = response.data?.data;
+        if (!pageData) {
+          throw new Error("Format de réponse invalide");
+        }
+
+        const productsData = pageData.data || [];
+        allProducts = [...allProducts, ...productsData];
+
+        const meta = pageData.meta;
+        hasMorePages = currentPage < meta.lastPage;
+        currentPage++;
+      }
+
+      // Traitement des réductions et du stock
+      const processedProducts = allProducts.map((product: Product) => {
+        const hasValidDiscount = product.discounts &&
+          product.discounts.length > 0 &&
+          isDiscountValid(product.discounts[0]);
+
+        return {
+          ...product,
+          inStock: product.stock > 0,
+          discountedPrice: hasValidDiscount
+            ? calculateDiscountedPrice(product.price, product.discounts![0])
+            : undefined
+        };
+      });
+
+      // Appliquer le tri aux produits traités
+      const sortedProducts = sortProducts(processedProducts);
+      setProducts(sortedProducts);
+
+      if (sortedProducts.length === 0) {
+        setSearchError("Aucun produit trouvé pour votre recherche");
+      }
+
+    } catch (error: any) {
+      console.error("Erreur lors de la récupération des produits:", error);
+      setSearchError("Une erreur est survenue lors de la recherche. Veuillez réessayer.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      setIsSearching(false);
+    }
+  };
+
+  const isDiscountValid = (discount: Discount): boolean => {
+    if (!discount) return false;
+
+    const now = new Date();
+    const startDate = discount.startDate ? new Date(discount.startDate) : null;
+    const endDate = discount.endDate ? new Date(discount.endDate) : null;
+
+    // Vérifier si la réduction est dans sa période de validité
+    if (startDate && startDate > now) return false;
+    if (endDate && endDate < now) return false;
+
+    return true;
+  };
+
+  const calculateDiscountedPrice = (originalPrice: number, discount: Discount): number | undefined => {
+    if (!discount) return undefined;
+
+    if (discount.type === 'percentage') {
+      return originalPrice * (1 - discount.value / 100);
+    } else if (discount.type === 'fixed') {
+      return Math.max(0, originalPrice - discount.value);
+    }
+
+    return undefined;
+  };
+
+  const handleFilterChange = (newFilters: Partial<FilterState>) => {
+    setFilters(prev => ({ ...prev, ...newFilters }));
+    fetchProducts(true);
+  };
+
+  useEffect(() => {
+    fetchProducts(true);
+  }, [selectedCategory, searchQuery]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchProducts(1, true);
-  };
-
-  const loadMore = () => {
-    if (!loadingMore && hasMore) {
-      fetchProducts(page + 1);
-    }
-  };
-
-  const toggleFavorite = async (productId: string) => {
-    try {
-      const token = await getToken();
-      console.log('ProductsScreen - Token récupéré :', token ? 'Présent' : 'Absent');
-      if (!token) {
-        console.warn('ProductsScreen - Aucun token trouvé, redirection vers connexion');
-        Alert.alert("Erreur", "Vous devez être connecté pour ajouter aux favoris.");
-        router.push("/connexion");
-        return;
-      }
-  
-      const isFavorite = favorites.has(productId);
-      const previousFavorites = new Set(favorites);
-  
-      try {
-        if (isFavorite) {
-          console.log('ProductsScreen - Récupération wishlist pour productId:', productId);
-          const response = await api.get("/wishlist", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          console.log('ProductsScreen - Réponse GET /wishlist :', JSON.stringify(response.data, null, 2));
-          const wishlistItem = response.data.data.find(
-            (item: any) => item.product_id === productId
-          );
-          if (wishlistItem) {
-            console.log('ProductsScreen - Suppression wishlist item:', wishlistItem.id);
-            await api.delete(`/wishlist/${wishlistItem.id}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            setFavorites(prev => {
-              const newFavs = new Set(prev);
-              newFavs.delete(productId);
-              return newFavs;
-            });
-            Alert.alert("Succès", "Produit retiré des favoris.");
-          } else {
-            console.warn('ProductsScreen - Aucun item wishlist trouvé pour productId:', productId);
-            setFavorites(prev => {
-              const newFavs = new Set(prev);
-              newFavs.delete(productId);
-              return newFavs;
-            });
-          }
-        } else {
-          console.log('ProductsScreen - Ajout à la wishlist, productId:', productId);
-          await api.post(
-            "/wishlist",
-            { productId },
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          setFavorites(prev => {
-            const newFavs = new Set(prev);
-            newFavs.add(productId);
-            return newFavs;
-          });
-          Alert.alert("Succès", "Produit ajouté aux favoris.");
-        }
-      } catch (error: any) {
-        console.error('ProductsScreen - Erreur modification favoris :', error.message);
-        console.log('ProductsScreen - Détails erreur :', JSON.stringify(error.response?.data, null, 2));
-        setFavorites(previousFavorites);
-        let errorMessage = "Impossible de modifier les favoris. Veuillez réessayer.";
-        if (error.response?.status === 401) {
-          console.warn('ProductsScreen - Erreur 401, redirection vers connexion');
-          errorMessage = "Session expirée. Veuillez vous reconnecter.";
-          await removeToken(); // Supprimer le token invalide
-          router.push("/connexion");
-        } else if (error.response?.data?.message) {
-          errorMessage = error.response.data.message;
-        }
-        Alert.alert("Erreur", errorMessage);
-      }
-    } catch (error) {
-      console.error('ProductsScreen - Erreur récupération token :', error);
-      Alert.alert("Erreur", "Impossible d'accéder aux favoris. Veuillez vous reconnecter.");
-      router.push("/connexion");
-    }
-  };
-
-  const handleAddToCart = async (product: Product) => {
-    try {
-      console.log('=== DÉBUT AJOUT AU PANIER ===');
-      console.log('Produit à ajouter:', product);
-
-      const token = await getToken();
-      if (!token) {
-        console.log('Aucun token trouvé, redirection vers connexion');
-        Alert.alert("Erreur", "Vous devez être connecté pour ajouter au panier");
-        router.push("/connexion");
-        return;
-      }
-
-      // Récupérer le panier actif ou en créer un
-      console.log('Récupération du panier actif');
-      let cartResponse;
-      try {
-        cartResponse = await api.get("/cart/active", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        console.log('Réponse panier actif:', cartResponse.data);
-      } catch (error) {
-        console.log('Erreur récupération panier actif:', error);
-        cartResponse = null;
-      }
-
-      let cart = cartResponse?.data?.data;
-
-      if (!cart) {
-        console.log('Création d\'un nouveau panier');
-        try {
-          cartResponse = await api.post("/cart", 
-            { status: "draft" },
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          cart = cartResponse.data.data;
-          console.log('Nouveau panier créé:', cart);
-        } catch (error) {
-          console.error('Erreur création panier:', error);
-          throw new Error('Impossible de créer un nouveau panier');
-        }
-      }
-
-      // Préparer les données pour l'ajout au panier
-      const cartItemData = {
-        cartId: cart.id,
-        productId: product.id,
-        quantity: 1,
-        unit_price: parseFloat(product.price.toString()),
-      };
-
-      console.log('Données envoyées au panier:', cartItemData);
-
-      // Ajouter le produit au panier
-      const response = await api.post('/cart-items', cartItemData, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      console.log('Réponse ajout au panier:', response.data);
-
-      Alert.alert(
-        'Succès',
-        `${product.name} a été ajouté au panier`,
-        [
-          {
-            text: 'Continuer mes achats',
-            style: 'cancel',
-          },
-          {
-            text: 'Voir mon panier',
-            onPress: () => {
-              router.push({
-                pathname: '/panier',
-                params: { refresh: Date.now() }
-              });
-            },
-          },
-        ]
-      );
-    } catch (error: any) {
-      console.error('=== ERREUR AJOUT AU PANIER ===', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
-      
-      let errorMessage = 'Impossible d\'ajouter le produit au panier';
-      if (error.response?.status === 401) {
-        errorMessage = "Session expirée. Veuillez vous reconnecter.";
-        router.push("/connexion");
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      }
-      
-      Alert.alert('Erreur', errorMessage);
-    }
+    fetchProducts(true);
   };
 
   const categories = Array.from(new Set(products.map(p => p.brand || "").filter(Boolean)));
@@ -366,19 +247,29 @@ export default function ProductsScreen() {
   const renderCategoryFilter = () => {
     const uniqueCategories = Array.from(
       new Set(products.map(p => p.category?.name).filter((name): name is string => name !== undefined))
-    );
+    ).sort();
 
     return (
       <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryScrollContent}
+        >
           <TouchableOpacity
             style={[
               styles.filterChip,
               !selectedCategory && styles.filterChipActive,
             ]}
-            onPress={() => setSelectedCategory(null)}
+            onPress={() => {
+              setSelectedCategory(null);
+              handleFilterChange({ categoryId: null });
+            }}
           >
-            <Text style={styles.filterChipText}>Tous</Text>
+            <Text style={[
+              styles.filterChipText,
+              !selectedCategory && styles.filterChipTextActive
+            ]}>Tous</Text>
           </TouchableOpacity>
           {uniqueCategories.map((category) => (
             <TouchableOpacity
@@ -387,9 +278,18 @@ export default function ProductsScreen() {
                 styles.filterChip,
                 selectedCategory === category && styles.filterChipActive,
               ]}
-              onPress={() => setSelectedCategory(category)}
+              onPress={() => {
+                setSelectedCategory(category);
+                const categoryId = products.find(p => p.category?.name === category)?.category?.id;
+                if (categoryId) {
+                  handleFilterChange({ categoryId: categoryId.toString() });
+                }
+              }}
             >
-              <Text style={styles.filterChipText}>{category}</Text>
+              <Text style={[
+                styles.filterChipText,
+                selectedCategory === category && styles.filterChipTextActive
+              ]}>{category}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -409,8 +309,8 @@ export default function ProductsScreen() {
           onPress={() => setPriceModalVisible(true)}
         >
           <Text style={styles.filterChipText}>
-            {filters.minPrice || filters.maxPrice ? 
-              `${filters.minPrice || '0'}€ - ${filters.maxPrice || '∞'}€` : 
+            {filters.minPrice || filters.maxPrice ?
+              `${filters.minPrice || '0'} GNF - ${filters.maxPrice || '∞'} GNF` :
               'Prix'}
           </Text>
         </TouchableOpacity>
@@ -444,8 +344,8 @@ export default function ProductsScreen() {
         >
           <Text style={styles.filterChipText}>
             {filters.stockStatus === 'in_stock' ? 'En stock' :
-             filters.stockStatus === 'out_of_stock' ? 'Rupture de stock' :
-             'Disponibilité'}
+              filters.stockStatus === 'out_of_stock' ? 'Rupture de stock' :
+                'Disponibilité'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -460,7 +360,7 @@ export default function ProductsScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Filtrer par prix</Text>
-            
+
             <TextInput
               style={styles.input}
               placeholder="Prix minimum"
@@ -468,7 +368,7 @@ export default function ProductsScreen() {
               value={tempMinPrice}
               onChangeText={setTempMinPrice}
             />
-            
+
             <TextInput
               style={styles.input}
               placeholder="Prix maximum"
@@ -515,84 +415,34 @@ export default function ProductsScreen() {
         style={[styles.sortButton, sortBy === "name" && styles.selectedSort]}
         onPress={() => setSortBy("name")}
       >
-        <Text>Nom</Text>
+        <Text style={sortBy === "name" ? styles.selectedSortText : styles.sortButtonText}>Nom</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={[styles.sortButton, sortBy === "price-asc" && styles.selectedSort]}
         onPress={() => setSortBy("price-asc")}
       >
-        <Text>Prix croissant</Text>
+        <Text style={sortBy === "price-asc" ? styles.selectedSortText : styles.sortButtonText}>Prix croissant</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={[styles.sortButton, sortBy === "price-desc" && styles.selectedSort]}
         onPress={() => setSortBy("price-desc")}
       >
-        <Text>Prix décroissant</Text>
+        <Text style={sortBy === "price-desc" ? styles.selectedSortText : styles.sortButtonText}>Prix décroissant</Text>
       </TouchableOpacity>
     </View>
   );
 
   const renderProduct = ({ item }: { item: Product }) => (
-    <View style={styles.productCard}>
-      <TouchableOpacity
-        onPress={() => {
-          router.push({
-            pathname: "/detail_produit",
-            params: {
-              id: item.id,
-              name: item.name,
-              price: item.price.toString(),
-              image: item.image || "",
-              description: item.description || "",
-              sizes: JSON.stringify(item.sizes || []),
-              availableSizes: JSON.stringify(item.availableSizes || []),
-              variants: JSON.stringify(item.variants || []),
-            },
-          });
-        }}
-      >
-        <Image 
-          source={{ 
-            uri: item.image ? 
-              FILE_URL + '/' + item?.image : 
-              `https://picsum.photos/seed/${item.id}/200/300` 
-          }} 
-          style={styles.productImage} 
-        />
-        <View style={styles.productInfo}>
-          <Text style={styles.productName}>{item.name}</Text>
-          <Text style={styles.productPrice}>{item.price} €</Text>
-        </View>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={styles.favoriteButton}
-        onPress={() => toggleFavorite(item.id)}
-      >
-        <Ionicons
-          name={favorites.has(item.id) ? "heart" : "heart-outline"}
-          size={20}
-          color={favorites.has(item.id) ? "red" : "black"}
-        />
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => handleAddToCart(item)}
-      >
-        <Ionicons name="add" size={20} color="white" />
-      </TouchableOpacity>
-    </View>
+    <ProductCard
+      id={parseInt(item.id)}
+      name={item.name}
+      description={item.description || ""}
+      image={item.image ? `${FILE_URL}/${item.image}` : ""}
+      price={item.price}
+      discountedPrice={item.discountedPrice}
+      inStock={item.inStock}
+    />
   );
-
-  const renderFooter = () => {
-    if (!loadingMore) return null;
-    return (
-      <View style={styles.footerLoader}>
-        <ActivityIndicator size="small" color="#F59E0B" />
-      </View>
-    );
-  };
 
   if (loading && !refreshing) {
     return (
@@ -605,20 +455,37 @@ export default function ProductsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Rechercher un produit..."
-          value={filters.search}
-          onChangeText={(text) => handleFilterChange({ search: text })}
-        />
+        <View style={styles.searchInputContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Rechercher un produit..."
+            value={searchQuery}
+            onChangeText={handleSearchChange}
+            returnKeyType="search"
+            onSubmitEditing={() => {
+              setFilters(prev => ({ ...prev, search: searchQuery }));
+              fetchProducts(true);
+            }}
+          />
+          {isSearching && (
+            <ActivityIndicator 
+              size="small" 
+              color="#F59E0B" 
+              style={styles.searchIndicator}
+            />
+          )}
+        </View>
+        {searchError && (
+          <Text style={styles.errorText}>{searchError}</Text>
+        )}
       </View>
-      
+
       {renderCategoryFilter()}
       {renderAdvancedFilters()}
       {renderSortOptions()}
 
       <FlatList
-        data={filteredProducts}
+        data={products}
         renderItem={renderProduct}
         keyExtractor={(item) => item.id}
         numColumns={NUM_COLUMNS}
@@ -627,12 +494,15 @@ export default function ProductsScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={renderFooter}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text>Aucun produit disponible</Text>
+            {loading ? (
+              <ActivityIndicator size="large" color="#F59E0B" />
+            ) : (
+              <Text style={styles.emptyText}>
+                {searchError || "Aucun produit disponible"}
+              </Text>
+            )}
           </View>
         }
       />
@@ -717,6 +587,11 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: "#fff",
   },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
   searchInput: {
     height: 40,
     borderWidth: 1,
@@ -725,8 +600,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: "#f5f5f5",
   },
+  searchIndicator: {
+    position: 'absolute',
+    right: 10,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 14,
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
   filterContainer: {
-    padding: 10,
+    paddingVertical: 10,
     backgroundColor: "#fff",
   },
   filterSection: {
@@ -741,6 +631,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#F5F5F5',
     marginHorizontal: 4,
+    minWidth: 80,
+    alignItems: 'center',
   },
   filterChipActive: {
     backgroundColor: '#F59E0B',
@@ -748,6 +640,10 @@ const styles = StyleSheet.create({
   filterChipText: {
     fontSize: 14,
     color: '#000',
+  },
+  filterChipTextActive: {
+    color: '#FFF',
+    fontWeight: 'bold',
   },
   sortContainer: {
     flexDirection: "row",
@@ -760,11 +656,22 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   sortButton: {
-    flexDirection: "row",
-    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    backgroundColor: '#F5F5F5',
+    marginHorizontal: 4,
   },
   selectedSort: {
-    backgroundColor: "#F59E0B",
+    backgroundColor: '#F59E0B',
+  },
+  sortButtonText: {
+    fontSize: 14,
+    color: '#000',
+  },
+  selectedSortText: {
+    color: '#FFF',
+    fontWeight: 'bold',
   },
   footerLoader: {
     paddingVertical: 20,
@@ -817,5 +724,38 @@ const styles = StyleSheet.create({
     color: 'white',
     textAlign: 'center',
     fontWeight: 'bold',
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#fff',
+  },
+  paginationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 5,
+  },
+  paginationButtonDisabled: {
+    backgroundColor: '#E0E0E0',
+  },
+  paginationButtonText: {
+    marginLeft: 10,
+    fontWeight: 'bold',
+  },
+  paginationButtonTextDisabled: {
+    color: '#9CA3AF',
+  },
+  paginationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paginationText: {
+    fontWeight: 'bold',
+  },
+  categoryScrollContent: {
+    paddingHorizontal: 10,
   },
 });

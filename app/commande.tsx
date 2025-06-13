@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -69,11 +69,12 @@ export default function CommandeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const ITEMS_PER_PAGE = 5;
   const [hasMore, setHasMore] = useState(true);
   const [processingPayment, setProcessingPayment] = useState<number | null>(null);
   const [cancellingOrder, setCancellingOrder] = useState<number | null>(null);
   const [showAllOrders, setShowAllOrders] = useState(false);
-  const [showHiddenOrders, setShowHiddenOrders] = useState(false);
   const [hidingOrder, setHidingOrder] = useState<number | null>(null);
 
   const verifyAuthentication = async () => {
@@ -95,7 +96,7 @@ export default function CommandeScreen() {
     }
   };
 
-  const fetchOrders = async (pageNum = 1, shouldRefresh = false) => {
+  const fetchOrders = useCallback(async (pageNum = 1, shouldRefresh = false) => {
     try {
       console.log('CommandeScreen - Début fetchOrders');
       const isAuth = await verifyAuthentication();
@@ -108,9 +109,11 @@ export default function CommandeScreen() {
         return;
       }
 
+      setLoading(true);
+
       console.log('CommandeScreen - Récupération des commandes');
       const response = await api.get(
-        `/orders?page=${pageNum}&limit=10&sort=createdAt:desc&showAll=${showAllOrders}&showHidden=${showHiddenOrders}`,
+        `/orders?page=${pageNum}&limit=${ITEMS_PER_PAGE}&sort=createdAt:desc`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -120,21 +123,11 @@ export default function CommandeScreen() {
 
       console.log('CommandeScreen - Commandes récupérées:', JSON.stringify(response.data, null, 2));
       const newOrders = Array.isArray(response.data.data?.data) ? response.data.data.data : [];
+      const total = response.data.data?.total || 0;
+      setTotalPages(Math.ceil(total / ITEMS_PER_PAGE));
+      setOrders(newOrders);
+      setPage(pageNum);
 
-      setHasMore(newOrders.length === 10);
-
-      if (shouldRefresh) {
-        setOrders(newOrders);
-      } else {
-        setOrders((prev) => {
-          const allOrders = [...prev, ...newOrders];
-          return allOrders.sort((a, b) => {
-            const dateA = new Date(a.createdAt).getTime();
-            const dateB = new Date(b.createdAt).getTime();
-            return dateB - dateA;
-          });
-        });
-      }
     } catch (error: any) {
       console.error('CommandeScreen - Erreur fetchOrders:', error);
       if (error.response?.status === 401) {
@@ -150,7 +143,30 @@ export default function CommandeScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    console.log('CommandeScreen - Initial load effect');
+    fetchOrders(1, true);
+  }, [fetchOrders]);
+
+  useFocusEffect(
+    useCallback(() => {
+      console.log('CommandeScreen - Focus effect triggered');
+      if (isAuthenticated) {
+        fetchOrders(1, true);
+      }
+      return () => {
+        console.log('CommandeScreen - Focus effect cleanup');
+      };
+    }, [isAuthenticated, fetchOrders])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setPage(1);
+    fetchOrders(1, true);
+  }, [fetchOrders]);
 
   const handlePayment = async (orderId: number) => {
     try {
@@ -235,17 +251,14 @@ export default function CommandeScreen() {
       setHidingOrder(orderId);
       const order = orders.find(o => o.id === orderId);
 
-      if (!order || !['paid', 'cancelled'].includes(order.status)) {
-        Alert.alert(
-          "Erreur",
-          "Seules les commandes payées ou annulées peuvent être masquées."
-        );
+      if (!order) {
+        Alert.alert("Erreur", "Commande non trouvée");
         return;
       }
 
       Alert.alert(
         "Masquer la commande",
-        "Êtes-vous sûr de vouloir masquer cette commande de l'historique ?",
+        "Cette commande sera masquée de votre historique mais restera dans notre système pour des raisons légales et de suivi. Voulez-vous continuer ?",
         [
           {
             text: "Annuler",
@@ -253,34 +266,40 @@ export default function CommandeScreen() {
           },
           {
             text: "Masquer",
-            style: "destructive",
             onPress: async () => {
               try {
                 const token = await getToken();
-                await api.patch(`/orders/${orderId}/visibility`, { isHidden: true }, {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                  }
-                });
+                await api.patch(`/orders/${orderId}/visibility`,
+                  { is_hidden: true },
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
 
                 // Mise à jour optimiste de l'interface
-                setOrders(prevOrders => prevOrders.filter(order => order.id !== orderId));
-                Alert.alert("Succès", "La commande a été masquée de l'historique");
+                setOrders(prevOrders =>
+                  prevOrders.map(order =>
+                    order.id === orderId
+                      ? { ...order, isHidden: true }
+                      : order
+                  )
+                );
+
+                Alert.alert("Succès", "La commande a été masquée de votre historique");
               } catch (error) {
-                console.error("Erreur lors du masquage:", error);
+                console.error("Erreur lors du masquage de la commande:", error);
                 Alert.alert(
                   "Erreur",
                   "Impossible de masquer la commande. Veuillez réessayer."
                 );
+              } finally {
+                setHidingOrder(null);
               }
             }
           }
         ]
       );
     } catch (error) {
-      console.error("Erreur lors du masquage:", error);
-      Alert.alert("Erreur", "Une erreur est survenue. Veuillez réessayer.");
+      console.error("Erreur:", error);
+      Alert.alert("Erreur", "Une erreur est survenue");
     } finally {
       setHidingOrder(null);
     }
@@ -355,38 +374,6 @@ export default function CommandeScreen() {
     }
   };
 
-  useEffect(() => {
-    const initializeScreen = async () => {
-      console.log('CommandeScreen - Initialisation');
-      if (!isAuthenticated) {
-        console.log('CommandeScreen - Non authentifié au chargement');
-        const isAuth = await verifyAuthentication();
-        if (isAuth) {
-          fetchOrders();
-        }
-      } else {
-        console.log('CommandeScreen - Déjà authentifié, chargement des commandes');
-        fetchOrders();
-      }
-    };
-
-    initializeScreen();
-  }, [isAuthenticated]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    setPage(1);
-    fetchOrders(1, true);
-  };
-
-  const loadMore = () => {
-    if (!loading && hasMore) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      fetchOrders(nextPage);
-    }
-  };
-
   const getStatusColor = (status: Order["status"]) => {
     switch (status) {
       case "pending":
@@ -450,9 +437,9 @@ export default function CommandeScreen() {
   };
 
   const renderOrderActions = (order: Order) => {
-    if (order.status === "pending" && order.paymentStatus === "pending") {
-      return (
-        <View style={styles.actionButtons}>
+    return (
+      <View style={styles.actionButtons}>
+        {order.status === 'pending' && order.paymentStatus !== 'paid' && (
           <TouchableOpacity
             style={[styles.actionButton, styles.payButton]}
             onPress={() => handlePayment(order.id)}
@@ -464,6 +451,9 @@ export default function CommandeScreen() {
               <Text style={styles.actionButtonText}>Payer</Text>
             )}
           </TouchableOpacity>
+        )}
+
+        {order.status === 'pending' && (
           <TouchableOpacity
             style={[styles.actionButton, styles.cancelButton]}
             onPress={() => handleCancelOrder(order.id)}
@@ -475,13 +465,9 @@ export default function CommandeScreen() {
               <Text style={styles.actionButtonText}>Annuler</Text>
             )}
           </TouchableOpacity>
-        </View>
-      );
-    }
+        )}
 
-    if (order.status === "cancelled" || order.paymentStatus === "paid") {
-      return (
-        <View style={styles.actionButtons}>
+        {!order.isHidden && (order.status === 'delivered' || order.status === 'cancelled') && (
           <TouchableOpacity
             style={[styles.actionButton, styles.hideButton]}
             onPress={() => handleHideOrder(order.id)}
@@ -490,14 +476,15 @@ export default function CommandeScreen() {
             {hidingOrder === order.id ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.actionButtonText}>Masquer de l'historique</Text>
+              <View style={styles.hideButtonContent}>
+                <Ionicons name="eye-off-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.actionButtonText}>Masquer</Text>
+              </View>
             )}
           </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return null;
+        )}
+      </View>
+    );
   };
 
   const renderOrderAddress = (order: Order) => {
@@ -525,64 +512,102 @@ export default function CommandeScreen() {
     );
   };
 
-  const renderOrderItem = ({ item }: { item: Order }) => (
-    <TouchableOpacity
-      style={styles.orderCard}
-      onPress={() => router.push(`/detail-commande/${item.id}` as any)}
-    >
-      <View style={styles.orderHeader}>
-        <Text style={styles.orderReference}>Commande #{item.reference}</Text>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) },
-          ]}
-        >
-          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+  const renderOrderItem = ({ item }: { item: Order }) => {
+    return (
+      <TouchableOpacity
+        style={styles.orderCard}
+        onPress={() => router.push(`/detail-commande/${item.id}` as any)}
+      >
+        <View style={styles.orderHeader}>
+          <Text style={styles.orderReference}>Commande #{item.reference}</Text>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(item.status) },
+            ]}
+          >
+            <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.orderInfo}>
-        <View style={styles.dateContainer}>
-          <Text style={styles.orderDate}>
-            Créée le {formatDate(item.createdAt)}
-          </Text>
-          {item.confirmedAt && (
+        <View style={styles.orderInfo}>
+          <View style={styles.dateContainer}>
             <Text style={styles.orderDate}>
-              Confirmée le {formatDate(item.confirmedAt)}
+              Créée le {formatDate(item.createdAt)}
+            </Text>
+            {item.confirmedAt && (
+              <Text style={styles.orderDate}>
+                Confirmée le {formatDate(item.confirmedAt)}
+              </Text>
+            )}
+          </View>
+          <View style={styles.priceContainer}>
+            <Text style={styles.orderTotal}>{parseFloat(item.totalAmount.toString()).toLocaleString('fr-FR')} GNF</Text>
+            <Text style={[styles.paymentStatus, { color: item.paymentStatus === "paid" ? "#10B981" : "#EF4444" }]}>
+              {getPaymentStatusText(item.paymentStatus)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.itemsPreview}>
+          {item.items.slice(0, 2).map((orderItem) => (
+            <Text key={`${item.id}-${orderItem.id}`} style={styles.itemText}>
+              {orderItem.quantity}x {orderItem.productName}
+              {orderItem.variantName ? ` - ${orderItem.variantName}` : ""}
+            </Text>
+          ))}
+          {item.items.length > 2 && (
+            <Text style={styles.moreItems}>
+              +{item.items.length - 2} autre(s) article(s)
             </Text>
           )}
         </View>
-        <View style={styles.priceContainer}>
-          <Text style={styles.orderTotal}>{parseFloat(item.totalAmount.toString()).toFixed(2)} €</Text>
-          <Text style={[styles.paymentStatus, { color: item.paymentStatus === "paid" ? "#10B981" : "#EF4444" }]}>
-            {getPaymentStatusText(item.paymentStatus)}
+
+        {renderOrderActions(item)}
+
+        <View style={styles.orderFooter}>
+          {renderOrderAddress(item)}
+          <Ionicons name="chevron-forward" size={20} color="#6B7280" />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderPagination = () => {
+    return (
+      <View style={styles.paginationContainer}>
+        <TouchableOpacity
+          style={[styles.paginationButton, page === 1 && styles.paginationButtonDisabled]}
+          onPress={() => page > 1 && fetchOrders(page - 1)}
+          disabled={page === 1 || loading}
+        >
+          <Ionicons name="chevron-back" size={24} color={page === 1 ? "#9CA3AF" : "#F59E0B"} />
+          <Text style={[
+            styles.paginationButtonText,
+            page === 1 && styles.paginationButtonTextDisabled
+          ]}>Précédent</Text>
+        </TouchableOpacity>
+
+        <View style={styles.paginationInfo}>
+          <Text style={styles.paginationText}>
+            Page {page} sur {totalPages}
           </Text>
         </View>
-      </View>
 
-      <View style={styles.itemsPreview}>
-        {item.items.slice(0, 2).map((orderItem) => (
-          <Text key={`${item.id}-${orderItem.id}`} style={styles.itemText}>
-            {orderItem.quantity}x {orderItem.productName}
-            {orderItem.variantName ? ` - ${orderItem.variantName}` : ""}
-          </Text>
-        ))}
-        {item.items.length > 2 && (
-          <Text style={styles.moreItems}>
-            +{item.items.length - 2} autre(s) article(s)
-          </Text>
-        )}
+        <TouchableOpacity
+          style={[styles.paginationButton, page >= totalPages && styles.paginationButtonDisabled]}
+          onPress={() => page < totalPages && fetchOrders(page + 1)}
+          disabled={page >= totalPages || loading}
+        >
+          <Text style={[
+            styles.paginationButtonText,
+            page >= totalPages && styles.paginationButtonTextDisabled
+          ]}>Suivant</Text>
+          <Ionicons name="chevron-forward" size={24} color={page >= totalPages ? "#9CA3AF" : "#F59E0B"} />
+        </TouchableOpacity>
       </View>
-
-      {renderOrderActions(item)}
-
-      <View style={styles.orderFooter}>
-        {renderOrderAddress(item)}
-        <Ionicons name="chevron-forward" size={20} color="#6B7280" />
-      </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   if (loading && !refreshing) {
     return (
@@ -608,35 +633,6 @@ export default function CommandeScreen() {
               {showAllOrders ? "Masquer les commandes terminées" : "Afficher toutes les commandes"}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, showHiddenOrders && styles.filterButtonActive]}
-            onPress={() => {
-              setShowHiddenOrders(!showHiddenOrders);
-              setPage(1);
-              fetchOrders(1, true);
-            }}
-          >
-            <Text style={[styles.filterButtonText, showHiddenOrders && styles.filterButtonTextActive]}>
-              {showHiddenOrders ? "Masquer commandes cachées" : "Afficher commandes cachées"}
-            </Text>
-          </TouchableOpacity>
-          {orders.some(order =>
-            (order.status === "cancelled" || order.paymentStatus === "paid") && !order.isHidden
-          ) && (
-              <TouchableOpacity
-                style={styles.hideAllButton}
-                onPress={handleHideAllCompletedOrders}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.hideAllButtonText}>
-                    Tout masquer
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
         </View>
       </View>
       <FlatList
@@ -647,8 +643,7 @@ export default function CommandeScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
+        ListFooterComponent={renderPagination}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons
@@ -853,6 +848,11 @@ const styles = StyleSheet.create({
   hideButton: {
     backgroundColor: '#6B7280',
   },
+  hideButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   actionButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
@@ -890,15 +890,66 @@ const styles = StyleSheet.create({
   filterButtonTextActive: {
     color: '#FFFFFF',
   },
-  hideAllButton: {
-    backgroundColor: '#6B7280',
-    paddingVertical: 8,
+  hiddenOrderCard: {
+    opacity: 0.7,
+    backgroundColor: "#F3F4F6",
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
+    paddingVertical: 20,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  paginationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFF8E1',
+  },
+  paginationButtonDisabled: {
+    backgroundColor: '#F3F4F6',
+  },
+  paginationButtonText: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: '600',
+    marginHorizontal: 4,
+  },
+  paginationButtonTextDisabled: {
+    color: '#9CA3AF',
+  },
+  paginationInfo: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
   },
-  hideAllButtonText: {
-    color: '#FFFFFF',
+  paginationText: {
+    color: '#4B5563',
     fontSize: 14,
+    fontWeight: '500',
+  },
+  hiddenBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    zIndex: 1,
+  },
+  hiddenBadgeText: {
+    color: '#6B7280',
+    fontSize: 12,
     fontWeight: '500',
   },
 });

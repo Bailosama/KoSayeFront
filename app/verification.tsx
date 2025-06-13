@@ -144,7 +144,7 @@ export default function VerificationScreen() {
       return false;
     }
     if (!addressForm.city.trim()) {
-      Alert.alert("Erreur", "La ville est requise");
+      Alert.alert("Erreur", "Le quartier est requis");
       return false;
     }
     if (!addressForm.phone.trim()) {
@@ -258,21 +258,21 @@ export default function VerificationScreen() {
           <Text style={styles.sectionTitle}>Récapitulatif de la commande</Text>
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Articles ({items.reduce((total, item) => total + item.quantity, 0)})</Text>
-            <Text style={styles.summaryValue}>{totals.subtotal.toFixed(2)} €</Text>
+            <Text style={styles.summaryValue}>{totals.subtotal.toFixed(2)} GNF</Text>
           </View>
           {totals.discount > 0 && (
             <View style={styles.summaryItem}>
               <Text style={styles.summaryLabel}>Réduction</Text>
-              <Text style={[styles.summaryValue, styles.discountValue]}>-{totals.discount.toFixed(2)} €</Text>
+              <Text style={[styles.summaryValue, styles.discountValue]}>-{totals.discount.toFixed(2)} %</Text>
             </View>
           )}
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Frais de livraison</Text>
-            <Text style={styles.summaryValue}>{totals.shippingFee.toFixed(2)} €</Text>
+            <Text style={styles.summaryValue}>{totals.shippingFee.toFixed(2)} GNF</Text>
           </View>
           <View style={[styles.summaryItem, styles.totalItem]}>
             <Text style={styles.totalLabel}>Total TTC</Text>
-            <Text style={styles.totalValue}>{totals.total.toFixed(2)} €</Text>
+            <Text style={styles.totalValue}>{totals.total.toFixed(2)} GNF</Text>
           </View>
         </View>
 
@@ -324,10 +324,10 @@ export default function VerificationScreen() {
               </View>
 
               <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Ville *</Text>
+                <Text style={styles.inputLabel}>Quartier *</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Entrez la ville"
+                  placeholder="Entrez le Quartier"
                   value={addressForm.city}
                   onChangeText={(value) => handleAddressFormChange("city", value)}
                 />

@@ -4,7 +4,7 @@ export class StripeService {
     /**
      * Crée une intention de paiement
      */
-    static async createPaymentIntent(amount: number, orderId: number, currency: string = 'eur') {
+    static async createPaymentIntent(amount: number, orderId: number, currency: string = 'gnf') {
         try {
             // Convertir le montant en centimes pour Stripe
             const amountInCents = Math.round(amount * 100);

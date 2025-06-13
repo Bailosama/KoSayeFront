@@ -51,7 +51,7 @@ export default function PaymentScreen() {
       <ScrollView style={styles.content}>
         <View style={styles.summary}>
           <Text style={styles.summaryTitle}>Montant à payer</Text>
-          <Text style={styles.amount}>{total.toFixed(2)} €</Text>
+          <Text style={styles.amount}>{total.toFixed(2)} GNF</Text>
         </View>
 
         <ShippingAddressDisplay addressId={addressId} />

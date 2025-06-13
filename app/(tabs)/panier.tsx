@@ -1,3 +1,4 @@
+import { FILE_URL } from "@/config";
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -15,10 +16,83 @@ import {
 } from 'react-native';
 import { useCart } from '../contexts/CartContext';
 
+const CartItem = ({
+  item,
+  onRemove,
+  onUpdateQuantity,
+  processing
+}: {
+  item: any;
+  onRemove: () => void;
+  onUpdateQuantity: (id: string, increment: boolean) => void;
+  processing: boolean;
+}) => {
+  const [imageError, setImageError] = useState(false);
+
+  // Construire l'URL de l'image
+  const imageUrl = imageError || !item.product.image
+    ? `https://picsum.photos/seed/${item.product.id}/200/300`
+    : item.product.image.startsWith('http')
+      ? item.product.image
+      : `${FILE_URL}/${item.product.image}`;
+
+  return (
+    <View key={item.id} style={styles.cartItem}>
+      <Image
+        source={{ uri: imageUrl }}
+        style={styles.productImage}
+        onError={() => {
+          setImageError(true);
+          console.log('Erreur de chargement image:', item.product.image);
+        }}
+      />
+      <View style={styles.productInfo}>
+        <Text style={styles.productName}>{item.product.name}</Text>
+        {item.variant && (
+          <Text style={styles.variantName}>{item.variant.name}</Text>
+        )}
+        <Text style={styles.productPrice}>
+          {Number(item.unitPrice || item.variant?.price || item.product.price || 0).toLocaleString('fr-FR')} GNF
+        </Text>
+      </View>
+
+      <View style={styles.rightContainer}>
+        <TouchableOpacity
+          onPress={onRemove}
+          style={styles.deleteButton}
+          disabled={processing}
+        >
+          <Ionicons name="trash-outline" size={24} color="#FF6B6B" />
+        </TouchableOpacity>
+        <View style={styles.quantityContainer}>
+          <TouchableOpacity
+            onPress={() => onUpdateQuantity(item.id, false)}
+            style={styles.quantityButton}
+            disabled={processing}
+          >
+            <Ionicons name="remove" size={24} color="#F59E0B" />
+          </TouchableOpacity>
+          <Text style={styles.quantityText}>
+            {item.quantity.toString().padStart(2, '0')}
+          </Text>
+          <TouchableOpacity
+            onPress={() => onUpdateQuantity(item.id, true)}
+            style={styles.quantityButton}
+            disabled={processing}
+          >
+            <Ionicons name="add" size={24} color="#F59E0B" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+};
+
 export default function CartScreen() {
   const router = useRouter();
   const { items, loading, totals, updateQuantity, removeFromCart, refreshCart } = useCart();
   const [processing, setProcessing] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
 
   useFocusEffect(
     useCallback(() => {
@@ -99,55 +173,13 @@ export default function CartScreen() {
 
       <ScrollView style={styles.cartList} showsVerticalScrollIndicator={false}>
         {items.map((item) => (
-          <View key={item.id} style={styles.cartItem}>
-            <Image
-              source={{
-                uri: item.product.image || 'https://via.placeholder.com/80'
-              }}
-              style={styles.productImage}
-              onError={(e) => {
-                console.log('Erreur de chargement image:', e.nativeEvent.error);
-              }}
-            />
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{item.product.name}</Text>
-              {item.variant && (
-                <Text style={styles.variantName}>{item.variant.name}</Text>
-              )}
-              <Text style={styles.productPrice}>
-                {Number(item.unitPrice || item.variant?.price || item.product.price || 0).toFixed(2)} €
-              </Text>
-            </View>
-
-            <View style={styles.rightContainer}>
-              <TouchableOpacity
-                onPress={() => handleRemoveItem(item.id)}
-                style={styles.deleteButton}
-                disabled={processing}
-              >
-                <Ionicons name="trash-outline" size={24} color="#FF6B6B" />
-              </TouchableOpacity>
-              <View style={styles.quantityContainer}>
-                <TouchableOpacity
-                  onPress={() => handleUpdateQuantity(item.id, false)}
-                  style={styles.quantityButton}
-                  disabled={processing}
-                >
-                  <Ionicons name="remove" size={24} color="#F59E0B" />
-                </TouchableOpacity>
-                <Text style={styles.quantityText}>
-                  {item.quantity.toString().padStart(2, '0')}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => handleUpdateQuantity(item.id, true)}
-                  style={styles.quantityButton}
-                  disabled={processing}
-                >
-                  <Ionicons name="add" size={24} color="#F59E0B" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
+          <CartItem
+            key={item.id}
+            item={item}
+            onRemove={() => handleRemoveItem(item.id)}
+            onUpdateQuantity={handleUpdateQuantity}
+            processing={processing}
+          />
         ))}
       </ScrollView>
 
@@ -161,19 +193,19 @@ export default function CartScreen() {
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Sous-total</Text>
-          <Text style={styles.summaryValue}>{totals.subtotal.toFixed(2)} €</Text>
+          <Text style={styles.summaryValue}>{totals.subtotal.toLocaleString('fr-FR')} GNF</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Réduction</Text>
-          <Text style={styles.summaryValue}>{totals.discount.toFixed(2)} €</Text>
+          <Text style={styles.summaryValue}>{totals.discount.toLocaleString('fr-FR')} %</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Frais de livraison</Text>
-          <Text style={styles.summaryValue}>{totals.shippingFee.toFixed(2)} €</Text>
+          <Text style={styles.summaryValue}>{totals.shippingFee.toLocaleString('fr-FR')} GNF</Text>
         </View>
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>{totals.total.toFixed(2)} €</Text>
+          <Text style={styles.totalValue}>{totals.total.toLocaleString('fr-FR')} GNF</Text>
         </View>
       </View>
 

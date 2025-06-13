@@ -8,6 +8,7 @@ import {
   FlatList,
   Image,
   Platform,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -33,20 +34,75 @@ interface WishlistItem {
   product: Product;
 }
 
+const FavoriteItem = ({ item, onRemove }: { item: WishlistItem; onRemove: (id: string) => void }) => {
+  const [imageError, setImageError] = useState(false);
+
+  // Construire l'URL de l'image
+  const imageUrl = imageError || !item.product.image
+    ? `https://picsum.photos/seed/${item.product.id}/200/300`
+    : item.product.image.startsWith('http')
+      ? item.product.image
+      : `${FILE_URL}/${item.product.image}`;
+
+  return (
+    <TouchableOpacity
+      style={styles.cardContainer}
+      onPress={() => {
+        console.log("Favoris.tsx - Navigation vers detail_produit avec productId :", item.product.id);
+        router.push({
+          pathname: "/detail_produit",
+          params: { productId: item.product.id },
+        });
+      }}
+    >
+      <Image
+        source={{ uri: imageUrl }}
+        style={styles.cardImage}
+        resizeMode="cover"
+        onError={() => setImageError(true)}
+      />
+      <View style={styles.cardContent}>
+        <Text style={styles.cardName}>{item.product.name}</Text>
+        <Text style={styles.cardPrice}>{parseFloat(item.product.price.toString()).toLocaleString('fr-FR')} GNF</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.removeButton}
+        onPress={() => onRemove(item.id)}
+      >
+        <Ionicons name="trash-outline" size={20} color="#FF0000" />
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+};
+
 export default function Favoris() {
   const [favorites, setFavorites] = useState<WishlistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const { refresh } = useLocalSearchParams();
 
-  const fetchFavorites = async (token: string) => {
+  const fetchFavorites = async (token: string, pageNum: number = 1, shouldRefresh: boolean = false) => {
     try {
       const response = await api.get("/wishlist", {
         headers: { Authorization: `Bearer ${token}` },
+        params: {
+          page: pageNum,
+          limit: 10
+        }
       });
       console.log("Favoris.tsx - Réponse GET /wishlist :", JSON.stringify(response.data, null, 2));
       const wishlistItems = response.data.data || [];
-      setFavorites(wishlistItems);
-      console.log("Favoris.tsx - État favorites mis à jour :", wishlistItems);
+
+      if (shouldRefresh) {
+        setFavorites(wishlistItems);
+      } else {
+        setFavorites(prev => [...prev, ...wishlistItems]);
+      }
+
+      setHasMore(wishlistItems.length === 10);
+      setPage(pageNum);
     } catch (error: any) {
       console.error("Favoris.tsx - Erreur récupération favoris :", error);
       console.log("Favoris.tsx - Détails erreur :", JSON.stringify(error.response?.data, null, 2));
@@ -57,7 +113,9 @@ export default function Favoris() {
           [{ text: "OK", onPress: () => router.push("/connexion") }]
         );
         if (Platform.OS !== "web") {
-                    await SecureStore.deleteItemAsync("userToken");        } else {          localStorage.removeItem("userToken");
+          await SecureStore.deleteItemAsync("authToken");
+        } else {
+          localStorage.removeItem("authToken");
         }
       } else {
         Alert.alert("Erreur", "Impossible de charger les favoris.");
@@ -65,6 +123,24 @@ export default function Favoris() {
       setFavorites([]);
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (!isLoading && hasMore) {
+      const token = await getToken();
+      if (token) {
+        await fetchFavorites(token, page + 1);
+      }
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const token = await getToken();
+    if (token) {
+      await fetchFavorites(token, 1, true);
     }
   };
 
@@ -102,7 +178,7 @@ export default function Favoris() {
         console.log("Favoris.tsx - useFocusEffect - Token :", token);
         if (token) {
           setIsLoading(true);
-          await fetchFavorites(token);
+          await fetchFavorites(token, 1, true);
         } else {
           setIsLoading(false);
           setFavorites([]);
@@ -112,43 +188,9 @@ export default function Favoris() {
     }, [refresh])
   );
 
-  const renderFavoriteItem = ({ item }: { item: WishlistItem }) => {
-    // Construire l'URL de l'image
-    const imageUrl = item.product.variants?.[0]?.image ? 
-      `${FILE_URL}/${item.product.variants[0].image}` :
-      item.product.image ?
-      `${FILE_URL}/${item.product.image}` :
-      `https://picsum.photos/seed/${item.product.id}/200/300`;
-
-    return (
-      <TouchableOpacity
-        style={styles.cardContainer}
-        onPress={() => {
-          console.log("Favoris.tsx - Navigation vers detail_produit avec productId :", item.product.id);
-          router.push({
-            pathname: "/detail_produit",
-            params: { productId: item.product.id },
-          });
-        }}
-      >
-        <Image
-          source={{ uri: imageUrl }}
-          style={styles.cardImage}
-          resizeMode="cover"
-        />
-        <View style={styles.cardContent}>
-          <Text style={styles.cardName}>{item.product.name}</Text>
-          <Text style={styles.cardPrice}>${parseFloat(item.product.price.toString()).toFixed(2)}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.removeButton}
-          onPress={() => handleRemoveFavorite(item.id)}
-        >
-          <Ionicons name="trash-outline" size={20} color="#FF0000" />
-        </TouchableOpacity>
-      </TouchableOpacity>
-    );
-  };
+  const renderFavoriteItem = ({ item }: { item: WishlistItem }) => (
+    <FavoriteItem item={item} onRemove={handleRemoveFavorite} />
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -170,6 +212,11 @@ export default function Favoris() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         />
       )}
     </SafeAreaView>

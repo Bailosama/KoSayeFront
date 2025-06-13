@@ -16,6 +16,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isInitialized: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (userData: {
@@ -34,117 +35,108 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    checkAuth();
-  }, []);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const checkAuth = async () => {
     try {
-      console.log('=== DÉBUT VÉRIFICATION AUTH ===');
+      console.log('=== Vérification du token ===');
       const token = await getToken();
-      console.log('Token récupéré:', token ? 'Présent' : 'Absent');
 
       if (!token) {
-        console.log('Pas de token trouvé, déconnexion...');
+        console.log('Pas de token trouvé');
         setUser(null);
+        setIsInitialized(true);
         return false;
       }
 
-      console.log('=== VÉRIFICATION PROFIL ===');
-      console.log('URL API:', api.defaults.baseURL);
-      console.log('Headers:', JSON.stringify(api.defaults.headers, null, 2));
+      console.log('Token trouvé, configuration des headers');
+      // Configure le token dans les headers pour toutes les requêtes futures
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
-      const response = await api.get('/user/profile');
-      console.log('Réponse profil:', JSON.stringify(response.data, null, 2));
+      try {
+        console.log('Récupération du profil utilisateur');
+        const response = await api.get('/user/profile');
 
-      if (response.data?.data) {
-        console.log('Profil récupéré avec succès');
-        setUser(response.data.data);
-        return true;
+        if (response.data?.data) {
+          console.log('Profil utilisateur récupéré');
+          setUser(response.data.data);
+          setIsInitialized(true);
+          return true;
+        }
+      } catch (profileError) {
+        console.log('Erreur lors de la récupération du profil:', profileError);
+        // Si l'erreur est 401 ou 403, le token n'est plus valide
+        await removeToken();
+        api.defaults.headers.common['Authorization'] = '';
+        setUser(null);
+        setIsInitialized(true);
+        return false;
       }
 
-      console.log('Données profil invalides');
-      return false;
-    } catch (error: any) {
-      console.error('=== ERREUR VÉRIFICATION AUTH ===');
-      console.error('Message:', error.message);
-      console.error('Réponse API:', JSON.stringify(error.response?.data, null, 2));
-      console.error('Status:', error.response?.status);
+      // Si on arrive ici, le token n'est plus valide
+      console.log('Token invalide ou expiré');
+      await removeToken();
+      api.defaults.headers.common['Authorization'] = '';
       setUser(null);
+      setIsInitialized(true);
       return false;
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error('Erreur lors de la vérification de l\'authentification:', error);
+      // En cas d'erreur, on nettoie tout
+      await removeToken();
+      api.defaults.headers.common['Authorization'] = '';
+      setUser(null);
+      setIsInitialized(true);
+      return false;
     }
   };
 
+  // Effet pour vérifier l'authentification au démarrage
+  useEffect(() => {
+    const initAuth = async () => {
+      console.log('=== Initialisation de l\'authentification ===');
+      try {
+        const isAuthenticated = await checkAuth();
+        console.log('Authentification vérifiée:', isAuthenticated);
+      } catch (error) {
+        console.error('Erreur lors de l\'initialisation de l\'auth:', error);
+      } finally {
+        console.log('Initialisation terminée');
+        setIsInitialized(true);
+      }
+    };
+
+    initAuth();
+  }, []);
+
   const login = async (email: string, password: string) => {
     try {
-      console.log('=== DÉBUT CONNEXION ===');
-      console.log('Email de connexion:', email);
-
+      console.log('=== Tentative de connexion ===');
       const response = await api.post('/user/login', { email, password });
-      console.log('=== RÉPONSE CONNEXION ===');
-      console.log('Message:', response.data.message);
-      console.log('Données complètes:', JSON.stringify(response.data, null, 2));
 
       if (response.data.message === "Connexion réussie") {
-        // Vérifier si le token existe dans la réponse
         if (!response.data.token?.token) {
-          console.error('Token manquant dans la réponse:', response.data);
           throw new Error('Token manquant dans la réponse du serveur');
         }
 
         const token = response.data.token.token;
-        console.log('Token reçu:', token);
-
         await setToken(token);
-        console.log('Token sauvegardé');
-
-        // Configurer le token dans les headers de l'API
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        console.log('Token configuré dans les headers de l\'API');
 
-        // Récupérer les données de l'utilisateur via le profil
-        console.log('=== RÉCUPÉRATION DONNÉES UTILISATEUR ===');
         const userResponse = await api.get('/user/profile');
-
-        console.log('=== DONNÉES UTILISATEUR RÉCUPÉRÉES ===');
-        console.log('Données complètes:', JSON.stringify(userResponse.data, null, 2));
 
         if (!userResponse.data.data) {
           throw new Error('Données utilisateur manquantes dans la réponse');
         }
 
-        const userData = {
-          id: userResponse.data.data.id,
-          firstname: userResponse.data.data.firstname,
-          lastname: userResponse.data.data.lastname,
-          email: userResponse.data.data.email,
-          phone: userResponse.data.data.phone,
-          adress: userResponse.data.data.adress,
-          profilePicture: userResponse.data.data.profilePicture
-        };
-
-        console.log('=== DONNÉES UTILISATEUR FINALES ===');
-        console.log(JSON.stringify(userData, null, 2));
-        setUser(userData);
-
-        // Attendre un court instant pour s'assurer que l'état est mis à jour
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        console.log('=== REDIRECTION VERS ACCUEIL ===');
-        router.push('/(tabs)/accueil');
-        return;
+        setUser(userResponse.data.data);
+        console.log('Connexion réussie, redirection vers l\'accueil');
+        router.replace('/(tabs)/accueil');
+      } else {
+        throw new Error('Réponse inattendue du serveur');
       }
-
-      throw new Error('Réponse inattendue du serveur');
     } catch (error: any) {
-      console.error('=== ERREUR DE CONNEXION ===');
-      console.error('Message:', error.message);
-      console.error('Réponse API:', error.response?.data);
-      console.error('Stack:', error.stack);
+      console.error('Erreur de connexion:', error);
       throw new Error(error.response?.data?.message || 'Une erreur est survenue lors de la connexion');
     }
   };
@@ -153,6 +145,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await removeToken();
       setUser(null);
+      api.defaults.headers.common['Authorization'] = '';
+      router.replace('/connexion');
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
       throw error;
@@ -168,120 +162,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     adress: string;
   }) => {
     try {
-      console.log('=== DÉBUT INSCRIPTION ===');
-      console.log('Données utilisateur:', userData);
-
       const response = await api.post('/user/register', userData);
-      console.log('=== RÉPONSE INSCRIPTION ===');
-      console.log('Message:', response.data.message);
 
       if (response.data.message === "Inscription réussie") {
-        // Faire une requête de connexion pour obtenir le token
-        const loginResponse = await api.post('/user/login', {
-          email: userData.email,
-          password: userData.password
-        });
-
-        console.log('=== RÉPONSE CONNEXION APRÈS INSCRIPTION ===');
-        console.log('Message:', loginResponse.data.message);
-
-        if (loginResponse.data.message === "Connexion réussie") {
-          const token = loginResponse.data.token.token;
-          await setToken(token);
-          console.log('Token sauvegardé:', token);
-
-          // Récupérer les données de l'utilisateur via le profil
-          const userResponse = await api.get('/user/profile', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-
-          console.log('=== DONNÉES UTILISATEUR RÉCUPÉRÉES ===');
-          console.log(JSON.stringify(userResponse.data.data, null, 2));
-
-          setUser({
-            id: userResponse.data.data.id,
-            firstname: userResponse.data.data.firstname,
-            lastname: userResponse.data.data.lastname,
-            email: userResponse.data.data.email,
-            phone: userResponse.data.data.phone,
-            adress: userResponse.data.data.adress,
-            profilePicture: userResponse.data.data.profilePicture
-          });
-
-          router.replace("/(tabs)/accueil");
-          return;
-        }
+        await login(userData.email, userData.password);
+      } else {
+        throw new Error('Réponse inattendue du serveur');
       }
-
-      throw new Error('Réponse inattendue du serveur');
     } catch (error: any) {
-      console.error('=== ERREUR INSCRIPTION ===');
-      console.error('Message:', error.message);
-      console.error('Réponse API:', error.response?.data);
-
-      if (error.response?.status === 422) {
-        const validationErrors = error.response.data.errors;
-        if (validationErrors) {
-          // Vérifier si l'email est déjà utilisé
-          const emailError = validationErrors.find((err: any) =>
-            err.message.includes('email has already been taken')
-          );
-          if (emailError) {
-            throw new Error('Cette adresse email est déjà utilisée. Veuillez utiliser une autre adresse email ou vous connecter.');
-          }
-
-          // Vérifier si le numéro de téléphone est déjà utilisé
-          const phoneError = validationErrors.find((err: any) =>
-            err.message.includes('phone has already been taken')
-          );
-          if (phoneError) {
-            throw new Error('Ce numéro de téléphone est déjà utilisé. Veuillez utiliser un autre numéro.');
-          }
-
-          // Pour les autres erreurs de validation
-          const errorMessage = validationErrors.map((err: any) => err.message).join('\n');
-          throw new Error(errorMessage || 'Erreur de validation des données');
-        }
-      }
-
+      console.error('Erreur lors de l\'inscription:', error);
       throw new Error(error.response?.data?.message || 'Une erreur est survenue lors de l\'inscription');
     }
   };
 
   const updateUser = (userData: Partial<User>) => {
-    console.log('=== MISE À JOUR UTILISATEUR ===');
-    console.log('Données reçues:', userData);
-
     setUser(prev => {
       if (!prev) return null;
-
-      // Si une nouvelle photo de profil est fournie, construire l'URL complète
-      if (userData.profilePicture) {
-        const baseUrl = 'http://192.168.1.144:3333';
-        // Vérifier si l'URL est déjà complète
-        if (!userData.profilePicture.startsWith('http')) {
-          // Si le chemin commence par /uploads, on l'utilise tel quel
-          if (userData.profilePicture.startsWith('/uploads')) {
-            userData.profilePicture = `${baseUrl}${userData.profilePicture}`;
-          } else {
-            // Sinon, on ajoute le chemin /uploads/users/
-            userData.profilePicture = `${baseUrl}/uploads/users/${userData.profilePicture}`;
-          }
-        }
-        console.log('URL de la photo de profil construite:', userData.profilePicture);
-      }
-
-      const updatedUser = { ...prev, ...userData };
-      console.log('Utilisateur mis à jour:', updatedUser);
-      return updatedUser;
+      return { ...prev, ...userData };
     });
   };
+
+  // Si l'authentification n'est pas encore initialisée, on ne rend rien
+  if (!isInitialized) {
+    return null;
+  }
 
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated: !!user,
+        isInitialized,
         login,
         logout,
         register,
@@ -289,7 +200,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateUser
       }}
     >
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };

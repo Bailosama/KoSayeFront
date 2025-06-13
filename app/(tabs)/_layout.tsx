@@ -1,7 +1,10 @@
-import React from "react";
-import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons"; // Utilisation d'une librairie d'icônes
+import { Tabs, router } from "expo-router";
+import React from "react";
 import { useTranslation } from "react-i18next";
+import { Pressable, View } from "react-native";
+import { useAuth } from "../contexts/AuthContext";
+import api from "./../api/api";
 // import Colors from "@/constants/Colors"; // Supposons que ce fichier n'existe pas encore
 
 const TINT_COLOR = "#F59E0B"; // Couleur orange pour les boutons actifs
@@ -9,6 +12,17 @@ const TINT_COLOR = "#F59E0B"; // Couleur orange pour les boutons actifs
 // Layout pour la navigation par onglets principale
 export default function TabLayout() {
   const { t } = useTranslation();
+  const { isAuthenticated } = useAuth();
+
+  const getActiveDiscounts = async () => {
+    try {
+      const response = await api.get('/reductions?status=active');
+      return response.data.data;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des réductions:', error);
+      return [];
+    }
+  };
 
   return (
     <Tabs
@@ -28,11 +42,11 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="accueil" // Nom du fichier -> app/(tabs)/accueil.tsx
+        name="accueil"
         options={{
           title: t("home"),
-          tabBarShowLabel: false, // Masque le texte sous l'icône
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarShowLabel: false,
+          tabBarIcon: ({ size, focused }) => (
             <Ionicons
               name="home"
               size={size}
@@ -46,7 +60,7 @@ export default function TabLayout() {
         options={{
           title: "Panier",
           tabBarShowLabel: false,
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarIcon: ({ size, focused }) => (
             <Ionicons
               name="basket"
               size={size}
@@ -60,12 +74,27 @@ export default function TabLayout() {
         options={{
           title: "Chatbot",
           tabBarShowLabel: false,
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarIcon: ({ size, focused }) => (
             <Ionicons
               name="chatbubbles"
               size={size}
               color={focused ? TINT_COLOR : "gray"}
             />
+          ),
+          tabBarButton: (props) => (
+            <View>
+              <Pressable
+                onPress={() => {
+                  if (!isAuthenticated) {
+                    router.push("/home");
+                    return;
+                  }
+                  router.push("/chatbot");
+                }}
+              >
+                {props.children}
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -74,12 +103,27 @@ export default function TabLayout() {
         options={{
           title: t("favorites"),
           tabBarShowLabel: false,
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarIcon: ({ size, focused }) => (
             <Ionicons
               name="bookmark"
               size={size}
               color={focused ? TINT_COLOR : "gray"}
             />
+          ),
+          tabBarButton: (props) => (
+            <View>
+              <Pressable
+                onPress={() => {
+                  if (!isAuthenticated) {
+                    router.replace("/home");
+                    return;
+                  }
+                  router.push("/favoris");
+                }}
+              >
+                {props.children}
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -88,12 +132,27 @@ export default function TabLayout() {
         options={{
           title: "Profil",
           tabBarShowLabel: false,
-          tabBarIcon: ({ color, size, focused }) => (
+          tabBarIcon: ({ size, focused }) => (
             <Ionicons
               name="person-circle"
               size={size}
               color={focused ? TINT_COLOR : "gray"}
             />
+          ),
+          tabBarButton: (props) => (
+            <View>
+              <Pressable
+                onPress={() => {
+                  if (!isAuthenticated) {
+                    router.replace("/home");
+                    return;
+                  }
+                  router.push("/profil");
+                }}
+              >
+                {props.children}
+              </Pressable>
+            </View>
           ),
         }}
       />

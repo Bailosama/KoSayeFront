@@ -162,7 +162,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
 
             // Mettre à jour le statut de la commande
             const token = await getToken();
-            await api.put(`/orders/${orderId}`, {
+            await api.patch(`/orders/${orderId}/status`, {
                 status: 'confirmed',
                 paymentStatus: 'paid'
             }, {
@@ -186,7 +186,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
     return (
         <View style={styles.container}>
             <Text style={styles.title}>Paiement sécurisé</Text>
-            <Text style={styles.amount}>{amount.toFixed(2)} €</Text>
+            <Text style={styles.amount}>{amount.toLocaleString('fr-FR')} GNF</Text>
             {amount > MAX_AMOUNT ? (
                 <Text style={styles.errorText}>
                     Montant trop élevé. Veuillez contacter le service client.
@@ -204,7 +204,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({
                         <ActivityIndicator color="#FFFFFF" />
                     ) : (
                         <Text style={styles.payButtonText}>
-                            {paymentInitialized ? `Payer ${amount.toFixed(2)} €` : 'Initialisation...'}
+                            {paymentInitialized ? `Payer ${amount.toLocaleString('fr-FR')} GNF` : 'Initialisation...'}
                         </Text>
                     )}
                 </TouchableOpacity>
