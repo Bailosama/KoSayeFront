@@ -523,7 +523,7 @@ export default function AccueilScreen() {
         }
 
         try {
-          const featuredResponse = await api.get("/products?page=1&limit=10");
+          const featuredResponse = await api.get("/products?page=1&limit=5");
           console.log("Réponse produits en vedette :", JSON.stringify(featuredResponse.data, null, 2));
           const fetchedFeatured = featuredResponse.data.data?.data || [];
           setFeaturedProducts(fetchedFeatured.length > 0 ? fetchedFeatured : fallbackProducts);
@@ -533,7 +533,7 @@ export default function AccueilScreen() {
         }
 
         try {
-          const popularResponse = await api.get("/products?page=2&limit=10");
+          const popularResponse = await api.get("/products?page=2&limit=5");
           console.log("Réponse produits populaires :", JSON.stringify(popularResponse.data, null, 2));
           const fetchedPopular = popularResponse.data.data?.data || [];
           setPopularProducts(fetchedPopular.length > 0 ? fetchedPopular : fallbackProducts);
