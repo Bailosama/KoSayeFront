@@ -1,4 +1,6 @@
 import { FILE_URL } from "@/config";
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams } from "expo-router";
 import debounce from 'lodash/debounce';
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -75,18 +77,19 @@ const CARD_MARGIN = 10;
 const CARD_WIDTH = (width - CARD_MARGIN * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
 
 export default function ProductsScreen() {
+  const params = useLocalSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState(params.search?.toString() || "");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(params.categoryId?.toString() || null);
   const [sortBy, setSortBy] = useState<"price-asc" | "price-desc" | "name">("name");
   const [filters, setFilters] = useState<FilterState>({
-    categoryId: null,
+    categoryId: params.categoryId?.toString() || null,
     minPrice: '',
     maxPrice: '',
-    search: '',
+    search: params.search?.toString() || '',
     stockStatus: null
   });
   const [priceModalVisible, setPriceModalVisible] = useState(false);
@@ -95,29 +98,36 @@ export default function ProductsScreen() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+
   // Debounced search function
   const debouncedSearch = useCallback(
     debounce((text: string) => {
       setFilters(prev => ({ ...prev, search: text }));
       fetchProducts(true);
-    }, 500),
+    }, 1000),
     []
   );
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
     setIsSearching(true);
-    debouncedSearch(text);
+    setFilters(prev => ({ ...prev, search: text }));
+    fetchProducts(true);
   };
 
   // Fonction de tri séparée
   const sortProducts = useCallback((productsToSort: Product[]) => {
     return [...productsToSort].sort((a, b) => {
+      const priceA = a.discountedPrice !== undefined ? a.discountedPrice : a.price;
+      const priceB = b.discountedPrice !== undefined ? b.discountedPrice : b.price;
+
       switch (sortBy) {
         case "price-asc":
-          return (a.discountedPrice || a.price) - (b.discountedPrice || b.price);
+          return priceA - priceB;
         case "price-desc":
-          return (b.discountedPrice || b.price) - (a.discountedPrice || a.price);
+          return priceB - priceA;
         case "name":
           return a.name.localeCompare(b.name);
         default:
@@ -128,9 +138,9 @@ export default function ProductsScreen() {
 
   // Appliquer le tri quand sortBy change
   useEffect(() => {
-    if (products.length > 0) {
-      const sortedProducts = sortProducts(products);
-      setProducts(sortedProducts);
+    if (filteredProducts.length > 0) {
+      const sortedProducts = sortProducts(filteredProducts);
+      setFilteredProducts(sortedProducts);
     }
   }, [sortBy, sortProducts]);
 
@@ -138,7 +148,7 @@ export default function ProductsScreen() {
     try {
       setLoading(true);
       setSearchError(null);
-      let allProducts: Product[] = [];
+      let fetchedProducts: Product[] = [];
       let currentPage = 1;
       let hasMorePages = true;
 
@@ -147,13 +157,13 @@ export default function ProductsScreen() {
           include: 'discounts,stock',
           limit: '15',
           page: currentPage.toString(),
-          ...(filters.categoryId && { category_id: filters.categoryId }),
           ...(filters.minPrice && { min_price: filters.minPrice }),
           ...(filters.maxPrice && { max_price: filters.maxPrice }),
           ...(filters.search && { search: filters.search }),
           ...(filters.stockStatus && { stock_status: filters.stockStatus })
         });
 
+        console.log('Fetching products with params:', params.toString());
         const response = await api.get(`/products?${params}`);
 
         const pageData = response.data?.data;
@@ -162,7 +172,7 @@ export default function ProductsScreen() {
         }
 
         const productsData = pageData.data || [];
-        allProducts = [...allProducts, ...productsData];
+        fetchedProducts = [...fetchedProducts, ...productsData];
 
         const meta = pageData.meta;
         hasMorePages = currentPage < meta.lastPage;
@@ -170,7 +180,7 @@ export default function ProductsScreen() {
       }
 
       // Traitement des réductions et du stock
-      const processedProducts = allProducts.map((product: Product) => {
+      const processedProducts = fetchedProducts.map((product: Product) => {
         const hasValidDiscount = product.discounts &&
           product.discounts.length > 0 &&
           isDiscountValid(product.discounts[0]);
@@ -184,13 +194,8 @@ export default function ProductsScreen() {
         };
       });
 
-      // Appliquer le tri aux produits traités
-      const sortedProducts = sortProducts(processedProducts);
-      setProducts(sortedProducts);
-
-      if (sortedProducts.length === 0) {
-        setSearchError("Aucun produit trouvé pour votre recherche");
-      }
+      setAllProducts(processedProducts);
+      applyFilters(processedProducts);
 
     } catch (error: any) {
       console.error("Erreur lors de la récupération des produits:", error);
@@ -199,6 +204,54 @@ export default function ProductsScreen() {
       setLoading(false);
       setRefreshing(false);
       setIsSearching(false);
+    }
+  };
+
+  const applyFilters = (productsToFilter: Product[]) => {
+    let filtered = [...productsToFilter];
+
+    // Filtrer par catégorie
+    if (filters.categoryId) {
+      filtered = filtered.filter(product => 
+        product.category?.id.toString() === filters.categoryId
+      );
+    }
+
+    // Filtrer par prix
+    if (filters.minPrice) {
+      const minPrice = parseFloat(filters.minPrice);
+      filtered = filtered.filter(product => 
+        (product.discountedPrice || product.price) >= minPrice
+      );
+    }
+    if (filters.maxPrice) {
+      const maxPrice = parseFloat(filters.maxPrice);
+      filtered = filtered.filter(product => 
+        (product.discountedPrice || product.price) <= maxPrice
+      );
+    }
+
+    // Filtrer par disponibilité
+    if (filters.stockStatus) {
+      filtered = filtered.filter(product => {
+        if (filters.stockStatus === 'in_stock') {
+          return product.inStock;
+        } else if (filters.stockStatus === 'out_of_stock') {
+          return !product.inStock;
+        }
+        return true;
+      });
+    }
+
+    // Appliquer le tri
+    filtered = sortProducts(filtered);
+
+    setFilteredProducts(filtered);
+
+    if (filtered.length === 0) {
+      setSearchError("Aucun produit trouvé pour votre recherche");
+    } else {
+      setSearchError(null);
     }
   };
 
@@ -229,13 +282,33 @@ export default function ProductsScreen() {
   };
 
   const handleFilterChange = (newFilters: Partial<FilterState>) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
-    fetchProducts(true);
+    setFilters(prev => {
+      const updatedFilters = { ...prev, ...newFilters };
+      applyFilters(allProducts);
+      return updatedFilters;
+    });
   };
 
   useEffect(() => {
-    fetchProducts(true);
-  }, [selectedCategory, searchQuery]);
+    if (params.search) {
+      setSearchQuery(params.search.toString());
+      setFilters(prev => ({ ...prev, search: params.search.toString() }));
+      fetchProducts(true);
+    }
+  }, [params.search]);
+
+  useEffect(() => {
+    if (params.categoryId) {
+      setSelectedCategory(params.categoryId.toString());
+      setFilters(prev => ({ ...prev, categoryId: params.categoryId.toString() }));
+      fetchProducts(true);
+    }
+  }, [params.categoryId]);
+
+  // Ajouter l'appel initial pour charger les produits
+  useEffect(() => {
+    fetchProducts();
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -246,7 +319,7 @@ export default function ProductsScreen() {
 
   const renderCategoryFilter = () => {
     const uniqueCategories = Array.from(
-      new Set(products.map(p => p.category?.name).filter((name): name is string => name !== undefined))
+      new Set(allProducts.map(p => p.category?.name).filter((name): name is string => name !== undefined))
     ).sort();
 
     return (
@@ -280,7 +353,7 @@ export default function ProductsScreen() {
               ]}
               onPress={() => {
                 setSelectedCategory(category);
-                const categoryId = products.find(p => p.category?.name === category)?.category?.id;
+                const categoryId = allProducts.find(p => p.category?.name === category)?.category?.id;
                 if (categoryId) {
                   handleFilterChange({ categoryId: categoryId.toString() });
                 }
@@ -308,7 +381,10 @@ export default function ProductsScreen() {
           ]}
           onPress={() => setPriceModalVisible(true)}
         >
-          <Text style={styles.filterChipText}>
+          <Text style={[
+            styles.filterChipText,
+            (filters.minPrice || filters.maxPrice) && styles.filterChipTextActive
+          ]}>
             {filters.minPrice || filters.maxPrice ?
               `${filters.minPrice || '0'} GNF - ${filters.maxPrice || '∞'} GNF` :
               'Prix'}
@@ -342,7 +418,10 @@ export default function ProductsScreen() {
             );
           }}
         >
-          <Text style={styles.filterChipText}>
+          <Text style={[
+            styles.filterChipText,
+            filters.stockStatus && styles.filterChipTextActive
+          ]}>
             {filters.stockStatus === 'in_stock' ? 'En stock' :
               filters.stockStatus === 'out_of_stock' ? 'Rupture de stock' :
                 'Disponibilité'}
@@ -454,38 +533,43 @@ export default function ProductsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher un produit..."
-            value={searchQuery}
-            onChangeText={handleSearchChange}
-            returnKeyType="search"
-            onSubmitEditing={() => {
-              setFilters(prev => ({ ...prev, search: searchQuery }));
-              fetchProducts(true);
-            }}
-          />
-          {isSearching && (
-            <ActivityIndicator 
-              size="small" 
-              color="#F59E0B" 
-              style={styles.searchIndicator}
+      <View style={styles.header}>
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputContainer}>
+            <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher un produit..."
+              placeholderTextColor="#666"
+              value={searchQuery}
+              onChangeText={handleSearchChange}
+              returnKeyType="search"
+              onSubmitEditing={() => handleSearchChange(searchQuery)}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
+            {isSearching && (
+              <ActivityIndicator 
+                size="small" 
+                color="#F59E0B" 
+                style={styles.searchIndicator}
+              />
+            )}
+          </View>
+          {searchError && (
+            <Text style={styles.errorText}>{searchError}</Text>
           )}
         </View>
-        {searchError && (
-          <Text style={styles.errorText}>{searchError}</Text>
-        )}
       </View>
 
-      {renderCategoryFilter()}
-      {renderAdvancedFilters()}
-      {renderSortOptions()}
+      <View style={styles.filtersContainer}>
+        {renderCategoryFilter()}
+        {renderAdvancedFilters()}
+        {renderSortOptions()}
+      </View>
 
       <FlatList
-        data={products}
+        data={filteredProducts}
         renderItem={renderProduct}
         keyExtractor={(item) => item.id}
         numColumns={NUM_COLUMNS}
@@ -494,6 +578,8 @@ export default function ProductsScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="none"
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             {loading ? (
@@ -514,6 +600,42 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#f5f5f5",
+  },
+  header: {
+    backgroundColor: "#fff",
+    paddingTop: 10,
+    paddingBottom: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  searchContainer: {
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 40,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 16,
+    color: '#333',
+  },
+  searchIndicator: {
+    marginLeft: 8,
+  },
+  filtersContainer: {
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
   },
   loadingContainer: {
     flex: 1,
@@ -582,27 +704,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F59E0B",
     borderRadius: 15,
     padding: 5,
-  },
-  searchContainer: {
-    padding: 10,
-    backgroundColor: "#fff",
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  searchInput: {
-    height: 40,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    backgroundColor: "#f5f5f5",
-  },
-  searchIndicator: {
-    position: 'absolute',
-    right: 10,
   },
   errorText: {
     color: '#EF4444',

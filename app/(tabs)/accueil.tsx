@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -88,9 +89,11 @@ const fallbackProducts: Product[] = [
 
 const Header = ({ userName }: { userName: string }) => {
   const { user } = useAuth();
-  const firstLetter = user?.firstname ? user.firstname.charAt(0).toUpperCase() : '?';
-  const router = useRouter();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const firstLetter = userName ? userName.charAt(0).toUpperCase() : "G";
 
   const fetchUnreadNotifications = async () => {
     try {
@@ -130,6 +133,18 @@ const Header = ({ userName }: { userName: string }) => {
     router.push('/notifications');
   };
 
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      setIsSearching(true);
+      router.push({
+        pathname: "/produits",
+        params: {
+          search: searchQuery.trim()
+        }
+      });
+    }
+  };
+
   return (
     <View style={styles.headerContainer}>
       <View style={styles.userInfoContainer}>
@@ -145,15 +160,25 @@ const Header = ({ userName }: { userName: string }) => {
         )}
         <Text style={styles.userName}>{userName || "Bienvenue !"}</Text>
       </View>
-      <View style={styles.headerIcons}>
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher un produit..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          onSubmitEditing={handleSearch}
+          returnKeyType="search"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
         <TouchableOpacity
-          style={styles.iconButton}
-          onPress={() => {
-            Alert.alert("Info", "La fonctionnalité de recherche n'est pas encore disponible.");
-          }}
+          style={styles.searchButton}
+          onPress={handleSearch}
         >
-          <Ionicons name="search" size={26} color="#333" />
+          <Ionicons name="search" size={20} color="#333" />
         </TouchableOpacity>
+      </View>
+      <View style={styles.headerIcons}>
         <TouchableOpacity
           style={styles.iconButton}
           onPress={handleNotificationPress}
@@ -541,8 +566,17 @@ export default function AccueilScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.welcomeText}>Bienvenue sur KO SAYE</Text>
-          <Text style={styles.subtitle}>Découvrez nos produits</Text>
+          {user ? (
+            <>
+              <Text style={styles.welcomeText}>Bienvenue {user.firstname} !</Text>
+              <Text style={styles.subtitle}>Que souhaitez-vous découvrir aujourd'hui ?</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.welcomeText}>Bienvenue sur KO SAYE</Text>
+              <Text style={styles.subtitle}>Découvrez nos produits</Text>
+            </>
+          )}
         </View>
         {user && <Header userName={`${user.firstname} ${user.lastname}`} />}
         <CategoryList categories={categories} />
@@ -760,5 +794,23 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: "#666",
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 20,
+    marginHorizontal: 10,
+    paddingHorizontal: 10,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 16,
+    color: '#333',
+  },
+  searchButton: {
+    padding: 8,
   },
 });
