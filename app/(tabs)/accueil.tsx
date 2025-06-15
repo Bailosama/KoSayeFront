@@ -244,7 +244,7 @@ const Banner = () => (
       <Text style={styles.bannerSubtitle}>pour les enfants</Text>
     </View>
     <Image
-      source={{ uri: "https://placehold.co/100x100/ffffff/000000/png" }}
+      source={require('../../assets/images/image 1.png')}
       style={styles.bannerImage}
       resizeMode="contain"
     />

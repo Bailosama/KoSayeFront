@@ -1,14 +1,15 @@
+import { router } from "expo-router";
 import React from "react";
 import {
+  Dimensions,
+  Image,
+  StatusBar,
   StyleSheet,
-  View,
   Text,
   TouchableOpacity,
-  Dimensions,
-  StatusBar,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
 
 const { width } = Dimensions.get("window");
 
@@ -26,11 +27,15 @@ export default function EcranAccueil() {
       <StatusBar barStyle="dark-content" backgroundColor="#F59E0B" />
       <View style={styles.zoneIllustration}>
         <View style={styles.imagePlaceholder}>
-          <Text style={{ color: "#ccc" }}>Illustration ici</Text>
+          <Image
+            source={require('../assets/images/image2.png')}
+
+            resizeMode="contain"
+          />
         </View>
       </View>
       <View style={styles.zoneTexte}>
-        <Text style={styles.titre}>Bienvenue sur Ko Saye</Text>
+        <Text style={styles.titre}>Bienvenue sur KOSAYE</Text>
         <Text style={styles.sousTitre}>
           Achetez, vendez et profitez d'offres exclusives en toute sécurité.
         </Text>
@@ -65,7 +70,6 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: width * 0.8,
     height: "80%",
-    backgroundColor: "#e0e0e0",
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 10,
@@ -130,4 +134,3 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
- 
