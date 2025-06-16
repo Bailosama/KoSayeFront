@@ -1,52 +1,97 @@
-import React, { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useTranslation } from "react-i18next";
-
-interface Message {
-  id: string;
-  text: string;
-  isUser: boolean;
-  timestamp: Date;
-}
+import { chatApi, ChatMessage } from "../api/chat";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function ChatbotScreen() {
   const { t } = useTranslation();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  const handleSend = () => {
-    if (inputText.trim() === "") return;
+  const fetchMessages = async (pageNum: number = 1, refresh: boolean = false) => {
+    try {
+      setLoading(true);
+      const response = await chatApi.getMessages(pageNum);
+      const newMessages = response.data;
+      
+      if (refresh) {
+        setMessages(newMessages);
+      } else {
+        setMessages(prev => [...prev, ...newMessages]);
+      }
+      
+      setHasMore(pageNum < response.meta.last_page);
+      setPage(pageNum);
+    } catch (error) {
+      console.error("Erreur lors de la récupération des messages:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: inputText,
-      isUser: true,
-      timestamp: new Date(),
-    };
+  useEffect(() => {
+    fetchMessages();
+  }, []);
 
-    setMessages([...messages, newMessage]);
-    setInputText("");
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchMessages(1, true);
+  };
 
-    // Simuler une réponse du chatbot
-    setTimeout(() => {
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: t("chatbot_response"),
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, botResponse]);
-    }, 1000);
+  const handleLoadMore = () => {
+    if (!loading && hasMore) {
+      fetchMessages(page + 1);
+    }
+  };
+
+  const handleSend = async () => {
+    if (inputText.trim() === "" || sending) return;
+
+    try {
+      setSending(true);
+      const response = await chatApi.sendMessage(inputText.trim());
+      
+      setMessages(prev => [response.userMessage, response.aiMessage, ...prev]);
+      setInputText("");
+      
+      // Marquer les messages comme lus
+      if (response.userMessage.id) {
+        await chatApi.updateMessage(response.userMessage.id, { isRead: true });
+      }
+      if (response.aiMessage.id) {
+        await chatApi.updateMessage(response.aiMessage.id, { isRead: true });
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'envoi du message:", error);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -58,37 +103,61 @@ export default function ChatbotScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.botIcon}>
-          <Ionicons name="robot" size={24} color="#F59E0B" />
+          <Ionicons name="chatbubble" size={24} color="#F59E0B" />
         </View>
         <Text style={styles.headerTitle}>{t("chatbot")}</Text>
       </View>
 
       {/* Messages */}
       <ScrollView
+        ref={scrollViewRef}
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          const paddingToBottom = 20;
+          if (layoutMeasurement.height + contentOffset.y >= 
+              contentSize.height - paddingToBottom) {
+            handleLoadMore();
+          }
+        }}
+        scrollEventThrottle={400}
       >
+        {loading && !refreshing && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color="#F59E0B" />
+          </View>
+        )}
+        
         {messages.map((message) => (
           <View
             key={message.id}
             style={[
               styles.messageBubble,
-              message.isUser ? styles.userBubble : styles.botBubble,
+              message.senderType === 'user' ? styles.userBubble : styles.botBubble,
             ]}
           >
-            {!message.isUser && (
+            {message.senderType === 'ai' && (
               <View style={styles.botAvatar}>
-                <Ionicons name="robot" size={20} color="#F59E0B" />
+                <Ionicons name="chatbubble" size={20} color="#F59E0B" />
               </View>
             )}
-            <Text
-              style={[
-                styles.messageText,
-                message.isUser ? styles.userText : styles.botText,
-              ]}
-            >
-              {message.text}
-            </Text>
+            <View style={styles.messageContent}>
+              <Text
+                style={[
+                  styles.messageText,
+                  message.senderType === 'user' ? styles.userText : styles.botText,
+                ]}
+              >
+                {message.content}
+              </Text>
+              <Text style={styles.timestamp}>
+                {formatDate(message.createdAt)}
+              </Text>
+            </View>
           </View>
         ))}
       </ScrollView>
@@ -101,17 +170,23 @@ export default function ChatbotScreen() {
           onChangeText={setInputText}
           placeholder={t("type_message")}
           placeholderTextColor="#666"
+          multiline
+          maxLength={500}
         />
         <TouchableOpacity
-          style={styles.sendButton}
+          style={[styles.sendButton, sending && styles.sendingButton]}
           onPress={handleSend}
-          disabled={inputText.trim() === ""}
+          disabled={inputText.trim() === "" || sending}
         >
-          <Ionicons
-            name="send"
-            size={24}
-            color={inputText.trim() === "" ? "#999" : "#F59E0B"}
-          />
+          {sending ? (
+            <ActivityIndicator color="#F59E0B" size="small" />
+          ) : (
+            <Ionicons
+              name="send"
+              size={24}
+              color={inputText.trim() === "" ? "#999" : "#F59E0B"}
+            />
+          )}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -129,6 +204,12 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    backgroundColor: "#fff",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   botIcon: {
     width: 40,
@@ -149,6 +230,10 @@ const styles = StyleSheet.create({
   messagesContent: {
     padding: 16,
   },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
   messageBubble: {
     maxWidth: "80%",
     padding: 12,
@@ -156,6 +241,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     flexDirection: "row",
     alignItems: "flex-start",
+  },
+  messageContent: {
+    flex: 1,
   },
   userBubble: {
     backgroundColor: "#F59E0B",
@@ -184,6 +272,12 @@ const styles = StyleSheet.create({
   botText: {
     color: "#333",
   },
+  timestamp: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+    alignSelf: "flex-end",
+  },
   inputContainer: {
     flexDirection: "row",
     padding: 16,
@@ -193,10 +287,12 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    height: 48,
+    minHeight: 48,
+    maxHeight: 120,
     backgroundColor: "#F5F5F5",
     borderRadius: 24,
     paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 16,
   },
   sendButton: {
@@ -207,5 +303,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginLeft: 8,
+  },
+  sendingButton: {
+    backgroundColor: "#FFF5E6",
   },
 });
