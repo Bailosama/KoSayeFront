@@ -1,3 +1,4 @@
+import { FontAwesome } from '@expo/vector-icons';
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import api from "./api/api";
+import { authApi } from "./api/auth";
 import { useAuth } from "./contexts/AuthContext";
 
 export default function EcranConnexion() {
@@ -75,14 +77,22 @@ export default function EcranConnexion() {
     }
   };
 
-  const handleGoogleLogin = () => {
-    console.log("Connexion avec Google");
-    // TODO: Implémenter la connexion Google
+  const handleGoogleLogin = async () => {
+    try {
+      authApi.redirectToGoogle();
+    } catch (error) {
+      console.error("Erreur lors de la redirection vers Google:", error);
+      Alert.alert("Erreur", "Impossible de se connecter avec Google. Veuillez réessayer.");
+    }
   };
 
-  const handleAppleLogin = () => {
-    console.log("Connexion avec Apple");
-    // TODO: Implémenter la connexion Apple
+  const handleFacebookLogin = async () => {
+    try {
+      authApi.redirectToFacebook();
+    } catch (error) {
+      console.error("Erreur lors de la redirection vers Facebook:", error);
+      Alert.alert("Erreur", "Impossible de se connecter avec Facebook. Veuillez réessayer.");
+    }
   };
 
   const handleMotDePasseOublie = () => {
@@ -160,18 +170,19 @@ export default function EcranConnexion() {
           </View>
 
           <TouchableOpacity
-            style={styles.boutonSocial}
+            style={[styles.boutonSocial, styles.googleButton]}
             onPress={handleGoogleLogin}
           >
-            <Text style={styles.iconeSocial}>G</Text>
+            <FontAwesome name="google" size={24} color="#fff" />
             <Text style={styles.texteBoutonSocial}>Continuer avec Google</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={styles.boutonSocial}
-            onPress={handleAppleLogin}
+            style={[styles.boutonSocial, styles.facebookButton]}
+            onPress={handleFacebookLogin}
           >
-            <Text style={styles.iconeSocial}></Text>
-            <Text style={styles.texteBoutonSocial}>Continuer avec Apple</Text>
+            <FontAwesome name="facebook" size={24} color="#fff" />
+            <Text style={styles.texteBoutonSocial}>Continuer avec Facebook</Text>
           </TouchableOpacity>
 
           <Text style={styles.texteConditions}>
@@ -281,16 +292,15 @@ const styles = StyleSheet.create({
   checkboxCheckmark: {
     color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "bold",
   },
   texteOption: {
     fontSize: 14,
-    color: "#000000",
+    color: "#666666",
   },
   texteLien: {
     fontSize: 14,
     color: "#000000",
-    fontWeight: "bold",
+    textDecorationLine: "underline",
   },
   separateurConteneur: {
     flexDirection: "row",
@@ -311,19 +321,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F0F0F0",
     paddingVertical: 15,
     borderRadius: 8,
     marginBottom: 15,
+    gap: 10,
   },
-  iconeSocial: {
-    fontSize: 18,
-    marginRight: 10,
+  googleButton: {
+    backgroundColor: "#DB4437",
+  },
+  facebookButton: {
+    backgroundColor: "#4267B2",
   },
   texteBoutonSocial: {
-    color: "#000000",
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   texteConditions: {
     fontSize: 12,

@@ -97,10 +97,10 @@ export const chatApi = {
       });
 
       const response = await api.get(`/chat/history?${params.toString()}`);
-      console.log('Réponse API chat:', response.data); // Pour déboguer
+      console.log('Réponse API chat:', response.data);
 
       // Vérifier si la réponse a la structure attendue
-      if (!response.data || !response.data.data) {
+      if (!response.data || !response.data.data || !response.data.data.data) {
         console.error('Structure de réponse invalide:', response.data);
         return {
           data: [],
@@ -113,7 +113,7 @@ export const chatApi = {
         };
       }
 
-      const messages = response.data.data;
+      const messages = response.data.data.data;
       
       // Transformer les messages pour correspondre à l'interface ChatMessage
       const transformedMessages = Array.isArray(messages) ? messages.map((msg: any) => ({
@@ -130,10 +130,10 @@ export const chatApi = {
       return {
         data: transformedMessages,
         meta: {
-          total: response.data.meta?.total || 0,
-          per_page: response.data.meta?.per_page || limit,
-          current_page: response.data.meta?.current_page || page,
-          last_page: response.data.meta?.last_page || 1
+          total: response.data.data.meta?.total || 0,
+          per_page: response.data.data.meta?.perPage || limit,
+          current_page: response.data.data.meta?.currentPage || page,
+          last_page: response.data.data.meta?.lastPage || 1
         }
       };
     } catch (error) {
