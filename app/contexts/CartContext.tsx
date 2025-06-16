@@ -172,7 +172,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     return sum + (unitPrice * item.quantity);
                 }, 0);
 
-                const discount = subtotal > 100 ? 10 : 0;
+                const discount = subtotal > 50000 ? 10 : 0;
                 const shippingFee = subtotal > 200 ? 0 : 5;
                 const total = subtotal - discount + shippingFee;
 
@@ -310,7 +310,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 return sum + (unitPrice * item.quantity);
             }, 0);
 
-            const discount = subtotal > 100 ? 10 : 0;
+            const discount = subtotal > 50000 ? 10 : 0;
             const shippingFee = subtotal > 200 ? 0 : 5;
             const total = subtotal - discount + shippingFee;
 
