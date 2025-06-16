@@ -29,11 +29,62 @@ export interface SendMessageResponse {
 export const chatApi = {
   // Envoyer un nouveau message
   sendMessage: async (content: string, orderId?: number): Promise<SendMessageResponse> => {
-    const response = await api.post('/chat', {
-      message: content,
-      orderId
-    });
-    return response.data.data;
+    try {
+      const response = await api.post('/chat', {
+        message: content,
+        orderId
+      });
+
+      if (!response.data || !response.data.data) {
+        throw new Error('Réponse invalide du serveur');
+      }
+
+      const data = response.data.data;
+      
+      // Vérifier la structure de la réponse
+      if (!data.userMessage || !data.aiMessage) {
+        throw new Error('Structure de réponse invalide');
+      }
+
+      // Transformer les messages pour correspondre à l'interface ChatMessage
+      return {
+        userMessage: {
+          id: data.userMessage.id,
+          content: data.userMessage.message,
+          senderType: 'user' as const,
+          senderId: data.userMessage.userId,
+          createdAt: data.userMessage.createdAt,
+          orderId: data.userMessage.orderId,
+          isRead: data.userMessage.isRead,
+          updatedAt: data.userMessage.updatedAt
+        },
+        aiMessage: {
+          id: data.aiMessage.id,
+          content: data.aiMessage.message,
+          senderType: 'ai' as const,
+          senderId: data.aiMessage.userId,
+          createdAt: data.aiMessage.createdAt,
+          orderId: data.aiMessage.orderId,
+          isRead: data.aiMessage.isRead,
+          updatedAt: data.aiMessage.updatedAt
+        }
+      };
+    } catch (error: any) {
+      console.error('Erreur lors de l\'envoi du message:', error);
+      
+      // Gérer les différents types d'erreurs
+      if (error.response) {
+        // Erreur avec réponse du serveur
+        const errorMessage = error.response.data?.message || 'Erreur lors de l\'envoi du message';
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        // Erreur sans réponse du serveur
+        throw new Error('Impossible de contacter le serveur');
+      } else {
+        // Autre type d'erreur
+        throw new Error(error.message || 'Une erreur inattendue est survenue');
+      }
+    }
   },
 
   // Récupérer les messages
