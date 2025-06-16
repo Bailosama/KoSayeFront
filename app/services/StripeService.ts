@@ -13,7 +13,7 @@ export class StripeService {
             const response = await api.post('/payments/create-payment-intent', {
                 amount: amountInCents,
                 currency,
-                orderId
+                order_id: orderId
             });
             console.log('StripeService - Réponse payment intent:', response.data);
             return response.data;
@@ -33,9 +33,15 @@ export class StripeService {
             price: string;
             quantity: number;
         }>;
+        orderId: number;
     }) {
         try {
-            const response = await api.post('/payments/create-checkout-session', params);
+            const response = await api.post('/payments/create-checkout-session', {
+                success_url: params.successUrl,
+                cancel_url: params.cancelUrl,
+                line_items: params.lineItems,
+                order_id: params.orderId
+            });
             return response.data;
         } catch (error) {
             console.error('Erreur création session checkout:', error);
@@ -46,9 +52,9 @@ export class StripeService {
     /**
      * Vérifie le statut d'un paiement
      */
-    static async checkPaymentStatus(paymentIntentId: string) {
+    static async checkPaymentStatus(paymentId: string) {
         try {
-            const response = await api.get(`/payments/payment-success?payment_intent=${paymentIntentId}`);
+            const response = await api.get(`/payments/payment-success?payment_id=${paymentId}`);
             return response.data;
         } catch (error) {
             console.error('Erreur vérification statut paiement:', error);
@@ -59,9 +65,9 @@ export class StripeService {
     /**
      * Gère l'annulation d'un paiement
      */
-    static async handlePaymentCancellation(paymentIntentId: string) {
+    static async handlePaymentCancellation(paymentId: string) {
         try {
-            const response = await api.get(`/payments/payment-cancel?payment_intent=${paymentIntentId}`);
+            const response = await api.get(`/payments/payment-cancel?payment_id=${paymentId}`);
             return response.data;
         } catch (error) {
             console.error('Erreur annulation paiement:', error);
