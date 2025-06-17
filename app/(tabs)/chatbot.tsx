@@ -18,7 +18,7 @@ import { useAuth } from "../contexts/AuthContext";
 
 export default function ChatbotScreen() {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -33,13 +33,13 @@ export default function ChatbotScreen() {
       setLoading(true);
       const response = await chatApi.getMessages(pageNum);
       const newMessages = response.data;
-      
+
       if (refresh) {
         setMessages(newMessages);
       } else {
         setMessages(prev => [...prev, ...newMessages]);
       }
-      
+
       setHasMore(pageNum < response.meta.last_page);
       setPage(pageNum);
     } catch (error) {
@@ -71,10 +71,10 @@ export default function ChatbotScreen() {
     try {
       setSending(true);
       const response = await chatApi.sendMessage(inputText.trim());
-      
+
       setMessages(prev => [response.userMessage, response.aiMessage, ...prev]);
       setInputText("");
-      
+
       // Marquer les messages comme lus
       if (response.userMessage.id) {
         await chatApi.updateMessage(response.userMessage.id, { isRead: true });
@@ -119,8 +119,8 @@ export default function ChatbotScreen() {
         onScroll={({ nativeEvent }) => {
           const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
           const paddingToBottom = 20;
-          if (layoutMeasurement.height + contentOffset.y >= 
-              contentSize.height - paddingToBottom) {
+          if (layoutMeasurement.height + contentOffset.y >=
+            contentSize.height - paddingToBottom) {
             handleLoadMore();
           }
         }}
@@ -131,7 +131,7 @@ export default function ChatbotScreen() {
             <ActivityIndicator color="#F59E0B" />
           </View>
         )}
-        
+
         {messages.map((message) => (
           <View
             key={message.id}
