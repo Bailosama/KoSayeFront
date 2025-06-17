@@ -1,3 +1,4 @@
+import { Linking } from 'react-native';
 import api from './api';
 
 export interface SocialAuthResponse {
@@ -16,13 +17,37 @@ export interface SocialAuthResponse {
 
 export const authApi = {
   // Redirection vers Google
-  redirectToGoogle: () => {
-    window.location.href = `${api.defaults.baseURL}/auth/google`;
+  redirectToGoogle: async () => {
+    try {
+      const url = `${api.defaults.baseURL}/auth/google`;
+      const supported = await Linking.canOpenURL(url);
+      
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        throw new Error('Impossible d\'ouvrir l\'URL de Google');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la redirection vers Google:', error);
+      throw error;
+    }
   },
 
   // Redirection vers Facebook
-  redirectToFacebook: () => {
-    window.location.href = `${api.defaults.baseURL}/auth/facebook`;
+  redirectToFacebook: async () => {
+    try {
+      const url = `${api.defaults.baseURL}/auth/facebook`;
+      const supported = await Linking.canOpenURL(url);
+      
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        throw new Error('Impossible d\'ouvrir l\'URL de Facebook');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la redirection vers Facebook:', error);
+      throw error;
+    }
   },
 
   // Gérer le callback de Google
