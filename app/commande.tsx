@@ -73,9 +73,8 @@ export default function CommandeScreen() {
   const ITEMS_PER_PAGE = 5;
   const [hasMore, setHasMore] = useState(true);
   const [processingPayment, setProcessingPayment] = useState<number | null>(null);
-  const [cancellingOrder, setCancellingOrder] = useState<number | null>(null);
-  const [showAllOrders, setShowAllOrders] = useState(false);
   const [hidingOrder, setHidingOrder] = useState<number | null>(null);
+  const [showAllOrders, setShowAllOrders] = useState(false);
 
   const verifyAuthentication = async () => {
     try {
@@ -211,38 +210,6 @@ export default function CommandeScreen() {
       );
     } finally {
       setProcessingPayment(null);
-    }
-  };
-
-  const handleCancelOrder = async (orderId: number) => {
-    try {
-      setCancellingOrder(orderId);
-      const token = await getToken();
-
-      await api.patch(
-        `/orders/${orderId}/status`,
-        { status: 'cancelled' },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      // Mise à jour optimiste de l'interface
-      setOrders(prevOrders =>
-        prevOrders.map(order =>
-          order.id === orderId
-            ? { ...order, status: 'cancelled' }
-            : order
-        )
-      );
-
-      Alert.alert("Succès", "La commande a été annulée");
-    } catch (error) {
-      console.error("Erreur lors de l'annulation:", error);
-      Alert.alert(
-        "Erreur",
-        "Impossible d'annuler la commande. Veuillez réessayer."
-      );
-    } finally {
-      setCancellingOrder(null);
     }
   };
 
@@ -439,34 +406,6 @@ export default function CommandeScreen() {
   const renderOrderActions = (order: Order) => {
     return (
       <View style={styles.actionButtons}>
-        {order.status === 'pending' && order.paymentStatus !== 'paid' && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.payButton]}
-            onPress={() => handlePayment(order.id)}
-            disabled={processingPayment === order.id}
-          >
-            {processingPayment === order.id ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.actionButtonText}>Payer</Text>
-            )}
-          </TouchableOpacity>
-        )}
-
-        {order.status === 'pending' && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.cancelButton]}
-            onPress={() => handleCancelOrder(order.id)}
-            disabled={cancellingOrder === order.id}
-          >
-            {cancellingOrder === order.id ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.actionButtonText}>Annuler</Text>
-            )}
-          </TouchableOpacity>
-        )}
-
         {!order.isHidden && (order.status === 'delivered' || order.status === 'cancelled') && (
           <TouchableOpacity
             style={[styles.actionButton, styles.hideButton]}
@@ -516,10 +455,8 @@ export default function CommandeScreen() {
     return (
       <TouchableOpacity
         style={styles.orderCard}
-        onPress={() => router.push({
-          pathname: "/detail-commande",
-          params: { id: item.id }
-        })}      >
+        onPress={() => router.push(`/detail-commande/${item.id}` as any)}
+      >
         <View style={styles.orderHeader}>
           <Text style={styles.orderReference}>Commande #{item.reference}</Text>
           <View

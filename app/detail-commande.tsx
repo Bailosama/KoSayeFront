@@ -63,14 +63,17 @@ interface Order {
 
 export default function DetailCommandeScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
+  const params = useLocalSearchParams<{ id: string }>();
   const { checkAuth } = useAuth();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cancellingOrder, setCancellingOrder] = useState(false);
 
   useEffect(() => {
-    fetchOrderDetails();
-  }, [id]);
+    if (params.id) {
+      fetchOrderDetails();
+    }
+  }, [params.id]);
 
   const fetchOrderDetails = async () => {
     try {
@@ -87,7 +90,7 @@ export default function DetailCommandeScreen() {
       }
 
       setLoading(true);
-      const response = await api.get(`/orders/${id}`, {
+      const response = await api.get(`/orders/${params.id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -171,6 +174,54 @@ export default function DetailCommandeScreen() {
     });
   };
 
+  const handleCancelOrder = async () => {
+    if (!order) return;
+
+    Alert.alert(
+      "Annuler la commande",
+      "Êtes-vous sûr de vouloir annuler cette commande ? Cette action est irréversible.",
+      [
+        {
+          text: "Non",
+          style: "cancel"
+        },
+        {
+          text: "Oui, annuler",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setCancellingOrder(true);
+              const token = await getToken();
+              if (!token) {
+                router.push("/connexion");
+                return;
+              }
+
+              await api.patch(
+                `/orders/${order.id}/status`,
+                { status: 'cancelled' },
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+
+              // Mise à jour de l'état local
+              setOrder(prev => prev ? { ...prev, status: 'cancelled' } : null);
+
+              Alert.alert("Succès", "La commande a été annulée avec succès");
+            } catch (error) {
+              console.error("Erreur lors de l'annulation:", error);
+              Alert.alert(
+                "Erreur",
+                "Impossible d'annuler la commande. Veuillez réessayer."
+              );
+            } finally {
+              setCancellingOrder(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -212,6 +263,21 @@ export default function DetailCommandeScreen() {
             <Text style={styles.statusText}>{getStatusText(order.status)}</Text>
           </View>
         </View>
+
+        {/* Bouton d'annulation pour les commandes en attente */}
+        {order.status === 'pending' && (
+          <TouchableOpacity
+            style={[styles.cancelButton, cancellingOrder && styles.cancelButtonDisabled]}
+            onPress={handleCancelOrder}
+            disabled={cancellingOrder}
+          >
+            {cancellingOrder ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.cancelButtonText}>Annuler la commande</Text>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* Informations de la commande */}
         <View style={styles.section}>
@@ -481,5 +547,21 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#1F2937",
+  },
+  cancelButton: {
+    backgroundColor: '#EF4444',
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    alignItems: 'center',
+  },
+  cancelButtonDisabled: {
+    opacity: 0.7,
+  },
+  cancelButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 
