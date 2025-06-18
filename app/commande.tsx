@@ -516,8 +516,10 @@ export default function CommandeScreen() {
     return (
       <TouchableOpacity
         style={styles.orderCard}
-        onPress={() => router.push(`/detail-commande/${item.id}` as any)}
-      >
+        onPress={() => router.push({
+          pathname: "/detail-commande",
+          params: { id: item.id }
+        })}      >
         <View style={styles.orderHeader}>
           <Text style={styles.orderReference}>Commande #{item.reference}</Text>
           <View
